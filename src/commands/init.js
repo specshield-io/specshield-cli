@@ -435,6 +435,10 @@ const initCommand = new Command('init')
         providerName:        answers.providerName,
         consumerName:        answers.consumerName,
         providerForConsumer: answers.consumerProvider,
+        org:                 answers.org,
+        specPath:            answers.specPath,
+        contractPath:        answers.contractPath,
+        environment:         answers.environment,
       }, cwd);
       ok(`Wrote ${chalk.white(path.relative(cwd, workflowPath))}`);
     }

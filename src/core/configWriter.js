@@ -137,10 +137,32 @@ function writeProjectConfig(config, cwd = process.cwd()) {
 /**
  * Render a starter GitHub Actions workflow that uses
  * `specshield26/bdct-action@v1`. Optional output of the wizard.
+ *
+ * Every input forwarded to the action MUST be present in the rendered YAML
+ * — including org. A missing org renders `--org ""` on the CLI invocation
+ * and the action fails with a cryptic "expected value" error from commander.
+ *
+ * spec/contract paths come from detection (or the user's --spec / --contract
+ * flag). They are NOT hardcoded — a previous version assumed every project
+ * stored its spec at `api/openapi.yaml`, which broke every project that
+ * keeps the spec at the repo root.
  */
-function renderWorkflow({ kind, providerName, consumerName, providerForConsumer }) {
+function renderWorkflow({
+  kind,
+  providerName,
+  consumerName,
+  providerForConsumer,
+  org,
+  specPath,
+  contractPath,
+  environment,
+}) {
   const isProvider = kind === 'provider' || kind === 'both';
   const isConsumer = kind === 'consumer' || kind === 'both';
+  const env = environment || 'production';
+  const orgLine = org ? `          org: ${org}` : '          org: <replace-me>';
+  const spec    = specPath     || 'openapi.yaml';
+  const contract = contractPath || 'contracts/contract.yaml';
 
   const lines = [
     '# .github/workflows/specshield-bdct.yml',
@@ -163,10 +185,11 @@ function renderWorkflow({ kind, providerName, consumerName, providerForConsumer 
       '      - uses: specshield26/bdct-action@v1',
       '        with:',
       '          command: publish-provider',
+      orgLine,
       `          provider: ${providerName}`,
       '          version: ${{ github.sha }}',
-      '          spec: api/openapi.yaml',
-      '          env: production',
+      `          spec: ${spec}`,
+      `          env: ${env}`,
       '          api-token: ${{ secrets.SPECSHIELD_API_KEY }}',
       '',
       '  gate:',
@@ -176,9 +199,10 @@ function renderWorkflow({ kind, providerName, consumerName, providerForConsumer 
       '      - uses: specshield26/bdct-action@v1',
       '        with:',
       '          command: can-i-deploy',
+      orgLine,
       `          service: ${providerName}`,
       '          version: ${{ github.sha }}',
-      '          env: production',
+      `          env: ${env}`,
       '          api-token: ${{ secrets.SPECSHIELD_API_KEY }}',
       '',
     );
@@ -193,10 +217,11 @@ function renderWorkflow({ kind, providerName, consumerName, providerForConsumer 
       '      - uses: specshield26/bdct-action@v1',
       '        with:',
       '          command: publish-consumer',
+      orgLine,
       `          consumer: ${consumerName}`,
       `          provider: ${providerForConsumer}`,
       '          version: ${{ github.sha }}',
-      '          contract: contracts/contract.yaml',
+      `          contract: ${contract}`,
       '          api-token: ${{ secrets.SPECSHIELD_API_KEY }}',
       '',
     );

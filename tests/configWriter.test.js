@@ -111,4 +111,50 @@ describe('renderWorkflow()', () => {
     expect(out).toMatch(/publish-provider:/);
     expect(out).toMatch(/publish-consumer:/);
   });
+
+  // ── Regression: workflow MUST forward all inputs the action needs ─────
+
+  it('forwards org: to every job (action.yml has no default; missing org → empty --org)', () => {
+    const out = renderWorkflow({
+      kind: 'provider', providerName: 'p', org: 'acme-pay',
+    });
+    // Provider job + can-i-deploy gate job both must have org.
+    const orgLines = out.split('\n').filter(l => /^\s+org:/.test(l));
+    expect(orgLines.length).toBeGreaterThanOrEqual(2);
+    orgLines.forEach(l => expect(l).toMatch(/org: acme-pay/));
+  });
+
+  it('falls back to org: <replace-me> when org is missing (visible signal vs silent empty)', () => {
+    const out = renderWorkflow({ kind: 'provider', providerName: 'p' });
+    expect(out).toMatch(/org: <replace-me>/);
+  });
+
+  it('uses the user\'s actual specPath, not a hardcoded api/openapi.yaml', () => {
+    const out = renderWorkflow({
+      kind: 'provider', providerName: 'p', org: 'a', specPath: 'openapi.yaml',
+    });
+    expect(out).toMatch(/spec: openapi\.yaml/);
+    expect(out).not.toMatch(/api\/openapi\.yaml/);
+  });
+
+  it('defaults specPath to openapi.yaml (root) when not provided — the common case', () => {
+    const out = renderWorkflow({ kind: 'provider', providerName: 'p', org: 'a' });
+    expect(out).toMatch(/spec: openapi\.yaml/);
+  });
+
+  it('uses the user\'s contractPath instead of contracts/contract.yaml when provided', () => {
+    const out = renderWorkflow({
+      kind: 'consumer', consumerName: 'c', providerForConsumer: 'p', org: 'a',
+      contractPath: 'pact/checkout-payments.json',
+    });
+    expect(out).toMatch(/contract: pact\/checkout-payments\.json/);
+    expect(out).not.toMatch(/contracts\/contract\.yaml/);
+  });
+
+  it('respects the environment when passed (default: production)', () => {
+    const out = renderWorkflow({
+      kind: 'provider', providerName: 'p', org: 'a', environment: 'staging',
+    });
+    expect(out).toMatch(/env: staging/);
+  });
 });
