@@ -101,11 +101,16 @@ function detectServiceName(cwd) {
     const m = cargo.match(/^\s*name\s*=\s*["']([^"']+)["']/m);
     if (m) return { source: 'Cargo.toml', name: m[1] };
   }
-  // pom.xml — naive single-line artifactId match (good enough for detection)
+  // pom.xml — naive artifactId match. We strip <parent>...</parent> first
+  // because every Spring Boot project has <parent><artifactId>spring-boot-starter-parent
+  // </artifactId></parent> ABOVE the project's own <artifactId>, and a plain
+  // regex match would pick the parent's name. With the parent block removed,
+  // the first <artifactId> we find is the project's own.
   const pom = readText(path.join(cwd, 'pom.xml'));
   if (pom) {
-    const m = pom.match(/<artifactId>([^<]+)<\/artifactId>/);
-    if (m) return { source: 'pom.xml', name: m[1] };
+    const stripped = pom.replace(/<parent>[\s\S]*?<\/parent>/g, '');
+    const m = stripped.match(/<artifactId>([^<]+)<\/artifactId>/);
+    if (m) return { source: 'pom.xml', name: m[1].trim() };
   }
   // Fallback — directory name
   return { source: 'directory', name: path.basename(path.resolve(cwd)) };

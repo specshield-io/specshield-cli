@@ -88,6 +88,70 @@ describe('specshield init --no-interactive', () => {
     expect(fs.existsSync(path.join(root, '.specshield.yml'))).toBe(false);
   });
 
+  // ─── F3 regression — `init --print` must never prompt ─────────────────
+  // Previously, --print still ran the interactive prompt flow and only the
+  // tail of the action handler honoured the flag. The fix routes --print
+  // through a previewFlow that's strictly non-interactive — so even with
+  // NO other flags and on a stdin-less invocation it exits cleanly with
+  // a dry-run YAML on stdout.
+
+  it('--print without --no-interactive does NOT prompt and exits 0', () => {
+    const root = tmpRepo({
+      'api/openapi.yaml': 'openapi: 3.0.0\npaths: {}\n',
+      'package.json':     JSON.stringify({ name: 'svc' }),
+    });
+    // Note: no --no-interactive, no --kind, no --org — bare `init --print`.
+    // If --print were still routed through the interactive flow, this would
+    // either hang waiting for input or print the prompt and exit.
+    const r = cp.spawnSync('node', [CLI, 'init', '--print'], {
+      cwd: root, encoding: 'utf8', input: '',
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/DRY RUN/);
+    expect(r.stdout).toMatch(/schemaVersion: 1/);
+    expect(fs.existsSync(path.join(root, '.specshield.yml'))).toBe(false);
+  });
+
+  it('--print with no --org uses a "<replace-me>" placeholder rather than failing', () => {
+    const root = tmpRepo({
+      'api/openapi.yaml': 'openapi: 3.0.0\npaths: {}\n',
+      'package.json':     JSON.stringify({ name: 'svc' }),
+    });
+    const r = cp.spawnSync('node', [CLI, 'init', '--print'], {
+      cwd: root, encoding: 'utf8', input: '',
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/<replace-me>/);
+  });
+
+  it('--print defaults kind to "provider" when a spec is detected', () => {
+    const root = tmpRepo({
+      'api/openapi.yaml': 'openapi: 3.0.0\npaths: {}\n',
+      'package.json':     JSON.stringify({ name: 'my-svc' }),
+    });
+    const r = cp.spawnSync('node', [CLI, 'init', '--print'], {
+      cwd: root, encoding: 'utf8', input: '',
+    });
+    expect(r.status).toBe(0);
+    // Provider block is present in the dry-run output.
+    expect(r.stdout).toMatch(/provider:/);
+    expect(r.stdout).toMatch(/name: my-svc/);
+  });
+
+  it('--print defaults kind to "skip" when NO spec is detected', () => {
+    const root = tmpRepo({
+      'package.json': JSON.stringify({ name: 'svc' }),
+      // No openapi.yaml anywhere.
+    });
+    const r = cp.spawnSync('node', [CLI, 'init', '--print'], {
+      cwd: root, encoding: 'utf8', input: '',
+    });
+    expect(r.status).toBe(0);
+    // Kind defaults to 'skip' → no bdct block in the output.
+    expect(r.stdout).not.toMatch(/^bdct:/m);
+    expect(r.stdout).toMatch(/schemaVersion: 1/);
+  });
+
   it('--write-workflow also writes .github/workflows/specshield-bdct.yml', () => {
     const root = tmpRepo({
       'api/openapi.yaml': 'openapi: 3.0.0\npaths: {}\n',

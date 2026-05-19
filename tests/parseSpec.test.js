@@ -34,4 +34,29 @@ describe('parseSpec', () => {
   test('throws on invalid YAML', () => {
     expect(() => parseSpec('key: [invalid', 'spec.yaml')).toThrow();
   });
+
+  // ─── F2 regression — non-OpenAPI input is rejected ──────────────────────
+  // Previously, files like `hello: world` were silently accepted and would
+  // compare as "no changes" against anything — a confusing footgun. The
+  // assertLooksLikeOpenApi check rejects them up front.
+
+  test('rejects valid YAML that is not an OpenAPI/Swagger spec', () => {
+    expect(() => parseSpec('hello: world', 'bad.yaml'))
+      .toThrow(/not a valid OpenAPI\/Swagger spec/);
+  });
+
+  test('rejects valid JSON that is not an OpenAPI/Swagger spec', () => {
+    expect(() => parseSpec(JSON.stringify({ random: 'data' }), 'bad.json'))
+      .toThrow(/not a valid OpenAPI\/Swagger spec/);
+  });
+
+  test('rejects YAML with openapi key but wrong version (2.x)', () => {
+    expect(() => parseSpec('openapi: "2.0"\npaths: {}', 'spec.yaml'))
+      .toThrow(/not a valid OpenAPI\/Swagger spec/);
+  });
+
+  test('accepts Swagger 2.0 (top-level `swagger:` key)', () => {
+    const result = parseSpec('swagger: "2.0"\npaths: {}', 'spec.yaml');
+    expect(result.swagger).toBe('2.0');
+  });
 });

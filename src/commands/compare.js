@@ -31,7 +31,12 @@ compare
   .option('--allow-breaking', 'Override fail-on-breaking behavior')
   .option('--config <path>', 'Path to .specshield.yml config file')
   .option('--ignore <change>', 'Ignore a specific change string (repeatable)', collect, [])
-  .option('--severity <level>', 'Minimum severity level: info | warning | error', 'error')
+  // Default severity is 'info' so additions and modifications are visible
+  // by default. Customers expect a diff summary to list ALL changes, with
+  // severity coloring/filtering as an opt-in narrowing. The previous default
+  // of 'error' silently hid every non-breaking change, which read as "0
+  // additions / 0 modifications" even when both existed.
+  .option('--severity <level>', 'Minimum severity level: info | warning | error', 'info')
   .option('--remote', 'Use the SpecShield hosted compare API')
   .option('--api-key <key>', 'API key for hosted mode (overrides env and stored config)')
   .option('--remote-url <url>', 'Override the hosted API base URL')

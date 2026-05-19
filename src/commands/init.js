@@ -326,6 +326,43 @@ function nonInteractiveFlow(detected, opts) {
   return answers;
 }
 
+// ─── Preview flow ──────────────────────────────────────────────────────────
+
+/**
+ * Used by `specshield init --print`. Behaves like `nonInteractiveFlow` but
+ * substitutes a "<replace-me>" placeholder for any required field the user
+ * didn't supply, instead of erroring out. The header comment printed
+ * alongside the YAML tells the user where to fill these in.
+ *
+ * Kind defaults to "provider" if a spec was detected (the most common
+ * case), else "skip" (local-compare-only).
+ */
+function previewFlow(detected, opts) {
+  const PLACEHOLDER = '<replace-me>';
+  const kind = opts.kind || (detected.spec ? 'provider' : 'skip');
+
+  const answers = {
+    kind,
+    server:      opts.server      || DEFAULT_SERVER,
+    org:         opts.org         || (kind === 'skip' ? null : PLACEHOLDER),
+    environment: opts.env         || detected.environment || 'staging',
+  };
+
+  if (kind === 'provider' || kind === 'both') {
+    answers.providerName = opts.provider || detected.serviceName || PLACEHOLDER;
+    answers.specPath     = opts.spec     || detected.spec        || PLACEHOLDER;
+  }
+  if (kind === 'consumer' || kind === 'both') {
+    answers.consumerName     = opts.consumer         || detected.serviceName || PLACEHOLDER;
+    answers.consumerProvider = opts.consumerProvider || PLACEHOLDER;
+    answers.contractPath     = opts.contract         || PLACEHOLDER;
+    answers.contractFormat   = opts.format           || 'OPENAPI';
+  }
+
+  answers.writeWorkflow = !!opts.writeWorkflow;
+  return answers;
+}
+
 // ─── Command ───────────────────────────────────────────────────────────────
 
 const initCommand = new Command('init')
@@ -349,12 +386,19 @@ const initCommand = new Command('init')
     const detected = detectAll(cwd);
 
     let answers;
-    if (opts.interactive === false) {
+    if (opts.print) {
+      // --print is documented as a dry-run that detects everything and writes
+      // a proposed YAML without prompting. Route it through the non-interactive
+      // flow (with relaxed validation — see previewFlow) so it truly never asks
+      // questions, even if the user didn't pass --no-interactive or all the
+      // required scripted-mode flags.
+      answers = previewFlow(detected, opts);
+    } else if (opts.interactive === false) {
       // In non-interactive mode, refuse to overwrite an existing config unless
       // --force is passed. Prevents a CI script from silently clobbering a
       // hand-edited .specshield.yml that has settings the wizard wouldn't
       // regenerate (custom branch, different provider name, etc.).
-      if (detected.existing && !opts.force && !opts.print) {
+      if (detected.existing && !opts.force) {
         logger.error(
           '.specshield.yml already exists. Pass --force to overwrite, or remove the file first.');
         process.exit(2);
@@ -369,7 +413,15 @@ const initCommand = new Command('init')
     const yaml = render(cfg);
 
     if (opts.print) {
-      process.stdout.write('\n' + yaml);
+      // Header comment makes it obvious this was a dry-run + flags any
+      // placeholders the user will need to fill in before committing.
+      process.stdout.write(
+        '\n# ─────────────────────────────────────────────────────────────\n' +
+        '#  specshield init --print — DRY RUN. No files were written.\n' +
+        '#  Review the YAML below; replace any "<replace-me>" placeholders\n' +
+        '#  before running `specshield init` (without --print) for real.\n' +
+        '# ─────────────────────────────────────────────────────────────\n\n' +
+        yaml);
       return;
     }
 

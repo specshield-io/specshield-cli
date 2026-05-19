@@ -104,6 +104,56 @@ describe('detectServiceName', () => {
     expect(detectServiceName(repo).name).toBe('checkout-svc');
   });
 
+  // ─── F4 regression — Spring Boot <parent> block must not be picked ─────
+  // Every Spring Boot project has a <parent><artifactId>spring-boot-starter-
+  // parent</artifactId></parent> ABOVE its own <artifactId>. A naive regex
+  // grabbed the parent's name; the fix strips <parent> blocks first.
+
+  it('skips the <parent> block and picks the project\'s own artifactId (Spring Boot layout)', () => {
+    const pom = `<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.2.0</version>
+  </parent>
+  <groupId>com.acme</groupId>
+  <artifactId>my-spring-service</artifactId>
+  <version>1.0.0</version>
+</project>`;
+    const repo = makeTmpRepo({ 'pom.xml': pom });
+    const r = detectServiceName(repo);
+    expect(r.source).toBe('pom.xml');
+    expect(r.name).toBe('my-spring-service');
+    expect(r.name).not.toBe('spring-boot-starter-parent');
+  });
+
+  it('handles multi-line <parent> with arbitrary whitespace/indentation', () => {
+    const pom = `<project>
+  <parent>
+
+      <artifactId>some-other-parent</artifactId>
+
+  </parent>
+  <artifactId>real-project</artifactId>
+</project>`;
+    const repo = makeTmpRepo({ 'pom.xml': pom });
+    expect(detectServiceName(repo).name).toBe('real-project');
+  });
+
+  it('handles multiple <parent> blocks defensively (only first is real, but strip them all)', () => {
+    // Synthetic — real POMs only have one <parent>. The fix uses `/g` so even
+    // pathological input doesn't leak through.
+    const pom = `<project>
+  <parent><artifactId>p1</artifactId></parent>
+  <parent><artifactId>p2</artifactId></parent>
+  <artifactId>kept</artifactId>
+</project>`;
+    const repo = makeTmpRepo({ 'pom.xml': pom });
+    expect(detectServiceName(repo).name).toBe('kept');
+  });
+
   it('falls back to directory name when nothing matches', () => {
     const repo = makeTmpRepo({ 'README.md': 'no manifest here' });
     const r = detectServiceName(repo);
