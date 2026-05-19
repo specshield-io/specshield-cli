@@ -21,6 +21,11 @@ const BREAKING_TYPES = new Set([
   'REQUEST_TYPE_CHANGED',
   'RESPONSE_TYPE_CHANGED',
   'SCHEMA_REMOVED',
+  // Constraint tightening: previously-valid values become invalid → breaking.
+  'CONSTRAINT_TIGHTENED',
+  // Pattern changes are treated as breaking (semantic safety: we can't
+  // tell whether the new pattern accepts a superset of the old).
+  'CONSTRAINT_PATTERN_CHANGED',
 ]);
 
 const ADDITION_TYPES = new Set([
@@ -36,6 +41,8 @@ const ADDITION_TYPES = new Set([
 const MODIFICATION_TYPES = new Set([
   'FIELD_BECAME_OPTIONAL',
   'PARAMETER_BECAME_OPTIONAL',
+  // Constraint relaxation: previously-rejected values now valid → safe change.
+  'CONSTRAINT_RELAXED',
 ]);
 
 const WARNING_TYPES = new Set([

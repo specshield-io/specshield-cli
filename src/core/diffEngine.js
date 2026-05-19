@@ -124,6 +124,11 @@ function diffParameters(path, method, baseParams, targetParams, diffs) {
           description: `Parameter "${bp.name}" became ${tp.required ? 'required' : 'optional'} in ${method.toUpperCase()} ${path}`,
         });
       }
+
+      // Constraint changes on the parameter's schema (min/max, length,
+      // pattern, enum). Tightening = breaking; loosening = modification.
+      diffConstraints(
+        path, method, `parameters.${bp.name}`, bp.schema, tp.schema, diffs);
     }
   }
 
@@ -260,6 +265,9 @@ function diffSchemaNode(path, method, fieldPrefix, base, target, diffs, isReques
       // Enum changes on field
       diffEnums(path, method, fullField, bField.enum, tField.enum, diffs);
 
+      // Constraint changes on the field's schema (min/max, length, pattern).
+      diffConstraints(path, method, fullField, bField, tField, diffs);
+
       // Recurse into nested objects
       if (bField.properties || tField.properties) {
         diffSchemaNode(path, method, fullField, bField, tField, diffs, isRequest);
@@ -315,6 +323,97 @@ function diffSchemaNode(path, method, fieldPrefix, base, target, diffs, isReques
       });
     }
   }
+}
+
+// ─── Constraints (min/max, length, pattern) ─────────────────────────────────
+
+/**
+ * Detects changes to numeric/string constraint fields on a schema node.
+ * Classification is direction-aware:
+ *
+ *   maximum increased / minimum decreased / maxLength increased / etc.
+ *     → CONSTRAINT_RELAXED (modification — existing clients still valid)
+ *
+ *   maximum decreased / minimum increased / maxLength decreased / etc.
+ *     → CONSTRAINT_TIGHTENED (breaking — previously-valid values now rejected)
+ *
+ *   pattern added/changed/removed
+ *     → CONSTRAINT_PATTERN_CHANGED (breaking; semantic comparison is too hard
+ *        to do safely so we treat any change as potentially restrictive)
+ *
+ * `null` on either side means "not constrained" — adding a constraint is
+ * tightening, removing one is relaxing.
+ */
+function diffConstraints(path, method, fieldPrefix, base, target, diffs) {
+  if (!base || !target) return;
+
+  // Direction map: how to interpret a numeric change for each constraint.
+  // 'upper' constraints (maximum, maxLength, maxItems): higher = looser.
+  // 'lower' constraints (minimum, minLength, minItems): lower = looser.
+  const UPPER = ['maximum', 'maxLength', 'maxItems'];
+  const LOWER = ['minimum', 'minLength', 'minItems'];
+
+  for (const key of UPPER) {
+    pushNumericConstraint(path, method, fieldPrefix, key, base[key], target[key], 'upper', diffs);
+  }
+  for (const key of LOWER) {
+    pushNumericConstraint(path, method, fieldPrefix, key, base[key], target[key], 'lower', diffs);
+  }
+
+  // pattern: any change is treated as a tightening (breaking). Adding or
+  // removing a pattern also counts.
+  if ((base.pattern || null) !== (target.pattern || null)) {
+    diffs.push({
+      type: 'CONSTRAINT_PATTERN_CHANGED',
+      path, method, field: fieldPrefix,
+      oldValue: base.pattern || null,
+      newValue: target.pattern || null,
+      description: target.pattern
+        ? `Pattern constraint on "${fieldPrefix}" changed from ${base.pattern ? `/${base.pattern}/` : '(none)'} to /${target.pattern}/ in ${method.toUpperCase()} ${path}`
+        : `Pattern constraint on "${fieldPrefix}" was removed from ${method.toUpperCase()} ${path}`,
+    });
+  }
+}
+
+function pushNumericConstraint(path, method, field, key, oldVal, newVal, direction, diffs) {
+  // Treat null/undefined as "no constraint".
+  const had = oldVal !== null && oldVal !== undefined;
+  const has = newVal !== null && newVal !== undefined;
+
+  if (!had && !has) return;
+  if (had && has && oldVal === newVal) return;
+
+  // Adding a constraint where none existed → tightening (breaking).
+  if (!had && has) {
+    diffs.push({
+      type: 'CONSTRAINT_TIGHTENED',
+      path, method, field,
+      oldValue: null, newValue: String(newVal),
+      description: `${key} constraint added on "${field}" (now ${newVal}) — tightens "${method.toUpperCase()} ${path}"`,
+    });
+    return;
+  }
+  // Removing a constraint → relaxation (modification).
+  if (had && !has) {
+    diffs.push({
+      type: 'CONSTRAINT_RELAXED',
+      path, method, field,
+      oldValue: String(oldVal), newValue: null,
+      description: `${key} constraint removed from "${field}" — relaxes "${method.toUpperCase()} ${path}"`,
+    });
+    return;
+  }
+
+  // Both present, different value. Direction tells us whether higher = looser
+  // or higher = tighter for THIS constraint key.
+  const wentUp = newVal > oldVal;
+  const isRelaxation = (direction === 'upper' && wentUp) || (direction === 'lower' && !wentUp);
+  diffs.push({
+    type: isRelaxation ? 'CONSTRAINT_RELAXED' : 'CONSTRAINT_TIGHTENED',
+    path, method, field,
+    oldValue: String(oldVal), newValue: String(newVal),
+    description: `${key} on "${field}" changed from ${oldVal} to ${newVal} (${isRelaxation ? 'relaxed' : 'tightened'}) in ${method.toUpperCase()} ${path}`,
+  });
 }
 
 function diffEnums(path, method, fieldPrefix, baseEnum, targetEnum, diffs) {

@@ -119,6 +119,18 @@ function resolveSchema(schema, schemas, depth = 0) {
     required: Array.isArray(schema.required) ? schema.required : [],
     properties: {},
     items: null,
+    // Constraint fields — preserved so the diff engine can detect changes
+    // to ranges/patterns/lengths (e.g. `maximum: 100` → `maximum: 250`).
+    // `undefined` (not present) and `null` are treated as "no constraint"
+    // by the diff engine; the explicit values flow through unchanged.
+    minimum:    schema.minimum    !== undefined ? schema.minimum    : null,
+    maximum:    schema.maximum    !== undefined ? schema.maximum    : null,
+    minLength:  schema.minLength  !== undefined ? schema.minLength  : null,
+    maxLength:  schema.maxLength  !== undefined ? schema.maxLength  : null,
+    minItems:   schema.minItems   !== undefined ? schema.minItems   : null,
+    maxItems:   schema.maxItems   !== undefined ? schema.maxItems   : null,
+    pattern:    schema.pattern    || null,
+    multipleOf: schema.multipleOf !== undefined ? schema.multipleOf : null,
   };
 
   if (schema.properties) {

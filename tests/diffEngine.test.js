@@ -383,3 +383,145 @@ describe('filterBySeverity', () => {
     expect(result.additions).toHaveLength(0);
   });
 });
+
+// ─── F1c regression — parameter & field constraint detection ──────────────
+// normalizeSpec now preserves minimum / maximum / minLength / maxLength /
+// minItems / maxItems / pattern. diffEngine's diffConstraints classifies
+// changes as RELAXED (modification) or TIGHTENED (breaking). These tests
+// pin the direction rules so a future "let's simplify" refactor doesn't
+// silently invert the safe-vs-unsafe classification.
+
+describe('diffEngine - constraint changes', () => {
+
+  function specWithLimitMax(max) {
+    return {
+      paths: {
+        '/users': {
+          get: {
+            parameters: [{
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', minimum: 1, maximum: max },
+            }],
+            responses: { '200': {} },
+          },
+        },
+      },
+    };
+  }
+
+  test('parameter maximum INCREASED is detected as a RELAXED constraint', () => {
+    const base   = normalizeSpec(specWithLimitMax(100));
+    const target = normalizeSpec(specWithLimitMax(250));
+    const diffs = diffSpecs(base, target);
+    const c = diffs.find(d => d.type === 'CONSTRAINT_RELAXED');
+    expect(c).toBeDefined();
+    expect(c.field).toBe('parameters.limit');
+    expect(c.oldValue).toBe('100');
+    expect(c.newValue).toBe('250');
+    expect(c.description).toMatch(/relaxed/);
+  });
+
+  test('parameter maximum DECREASED is detected as a TIGHTENED constraint', () => {
+    const base   = normalizeSpec(specWithLimitMax(100));
+    const target = normalizeSpec(specWithLimitMax(50));
+    const diffs = diffSpecs(base, target);
+    const c = diffs.find(d => d.type === 'CONSTRAINT_TIGHTENED');
+    expect(c).toBeDefined();
+    expect(c.oldValue).toBe('100');
+    expect(c.newValue).toBe('50');
+  });
+
+  test('parameter minimum INCREASED is detected as TIGHTENED (lower-bound direction)', () => {
+    const base   = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } }], responses: {} } } } });
+    const target = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'page', in: 'query', schema: { type: 'integer', minimum: 5 } }], responses: {} } } } });
+    const diffs = diffSpecs(base, target);
+    expect(diffs.some(d => d.type === 'CONSTRAINT_TIGHTENED' && d.field === 'parameters.page')).toBe(true);
+  });
+
+  test('parameter minimum DECREASED is detected as RELAXED', () => {
+    const base   = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'page', in: 'query', schema: { type: 'integer', minimum: 5 } }], responses: {} } } } });
+    const target = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } }], responses: {} } } } });
+    const diffs = diffSpecs(base, target);
+    expect(diffs.some(d => d.type === 'CONSTRAINT_RELAXED' && d.field === 'parameters.page')).toBe(true);
+  });
+
+  test('adding a new constraint where none existed is TIGHTENED', () => {
+    const base   = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'q', in: 'query', schema: { type: 'string' } }], responses: {} } } } });
+    const target = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'q', in: 'query', schema: { type: 'string', maxLength: 50 } }], responses: {} } } } });
+    const diffs = diffSpecs(base, target);
+    const c = diffs.find(d => d.type === 'CONSTRAINT_TIGHTENED');
+    expect(c).toBeDefined();
+    expect(c.oldValue).toBeNull();
+    expect(c.newValue).toBe('50');
+  });
+
+  test('removing a constraint that previously existed is RELAXED', () => {
+    const base   = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'q', in: 'query', schema: { type: 'string', maxLength: 50 } }], responses: {} } } } });
+    const target = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'q', in: 'query', schema: { type: 'string' } }], responses: {} } } } });
+    const diffs = diffSpecs(base, target);
+    const c = diffs.find(d => d.type === 'CONSTRAINT_RELAXED');
+    expect(c).toBeDefined();
+    expect(c.oldValue).toBe('50');
+    expect(c.newValue).toBeNull();
+  });
+
+  test('pattern change is treated as breaking (safety: we can\'t prove the new pattern is a superset)', () => {
+    const base   = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'code', in: 'query', schema: { type: 'string', pattern: '^[A-Z]{3}$' } }], responses: {} } } } });
+    const target = normalizeSpec({ paths: { '/x': { get: { parameters: [{
+      name: 'code', in: 'query', schema: { type: 'string', pattern: '^[A-Z0-9]{6}$' } }], responses: {} } } } });
+    const diffs = diffSpecs(base, target);
+    const c = diffs.find(d => d.type === 'CONSTRAINT_PATTERN_CHANGED');
+    expect(c).toBeDefined();
+    // Bucketed as breaking via classifyChanges.
+    const classified = classifyChanges(diffs);
+    expect(classified.breakingChanges.some(b => b.type === 'CONSTRAINT_PATTERN_CHANGED')).toBe(true);
+  });
+
+  test('classifyChanges buckets CONSTRAINT_RELAXED as modification and CONSTRAINT_TIGHTENED as breaking', () => {
+    const diffs = [
+      { type: 'CONSTRAINT_RELAXED',   path: '/x', method: 'get', field: 'parameters.limit',  oldValue: '100', newValue: '250', description: 'limit relaxed' },
+      { type: 'CONSTRAINT_TIGHTENED', path: '/y', method: 'get', field: 'parameters.page',   oldValue: '1',   newValue: '5',   description: 'page tightened' },
+    ];
+    const r = classifyChanges(diffs);
+    expect(r.modifications).toHaveLength(1);
+    expect(r.modifications[0].type).toBe('CONSTRAINT_RELAXED');
+    expect(r.breakingChanges).toHaveLength(1);
+    expect(r.breakingChanges[0].type).toBe('CONSTRAINT_TIGHTENED');
+  });
+
+  test('field-level constraint changes work too (not just parameters)', () => {
+    // Constraint changes on request body / response schema fields.
+    const base = normalizeSpec({
+      paths: { '/x': { post: { requestBody: { content: { 'application/json': { schema: {
+        type: 'object',
+        properties: { name: { type: 'string', maxLength: 100 } },
+      }}}}, responses: {} } } },
+    });
+    const target = normalizeSpec({
+      paths: { '/x': { post: { requestBody: { content: { 'application/json': { schema: {
+        type: 'object',
+        properties: { name: { type: 'string', maxLength: 50 } },
+      }}}}, responses: {} } } },
+    });
+    const diffs = diffSpecs(base, target);
+    expect(diffs.some(d => d.type === 'CONSTRAINT_TIGHTENED' && d.field === 'requestBody.name')).toBe(true);
+  });
+
+  test('no constraint change → no diff emitted', () => {
+    const a = normalizeSpec(specWithLimitMax(100));
+    const b = normalizeSpec(specWithLimitMax(100));
+    const diffs = diffSpecs(a, b);
+    expect(diffs.filter(d => d.type.startsWith('CONSTRAINT_'))).toHaveLength(0);
+  });
+});
