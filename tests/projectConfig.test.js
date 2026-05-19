@@ -153,3 +153,76 @@ describe('applyBdctDefaults()', () => {
     expect(opts.org).toBe('acme');
   });
 });
+
+// ── Pre-flight: refuse to run when "<replace-me>" placeholder is present ──
+
+describe('applyBdctDefaults — placeholder check', () => {
+  it('throws UNRESOLVED_PLACEHOLDER when bdct.org is the placeholder', () => {
+    const root = makeTmp({
+      '.specshield.yml': [
+        'bdct:',
+        '  org: <replace-me>',
+        '  provider:',
+        '    name: payment-service',
+        '    spec: a.yaml',
+      ].join('\n') + '\n',
+    });
+    const opts = { version: 'v1' };
+    expect(() => applyBdctDefaults(opts, 'publish-provider', { cwd: root }))
+      .toThrow(/<replace-me>/);
+    try {
+      applyBdctDefaults({ version: 'v1' }, 'publish-provider', { cwd: root });
+    } catch (err) {
+      expect(err.code).toBe('UNRESOLVED_PLACEHOLDER');
+      expect(err.placeholders).toContain('--org');
+    }
+  });
+
+  it('error message names the config file path so users can find it', () => {
+    const root = makeTmp({
+      '.specshield.yml': [
+        'bdct:',
+        '  org: <replace-me>',
+      ].join('\n') + '\n',
+    });
+    try {
+      applyBdctDefaults({}, 'publish-provider', { cwd: root });
+    } catch (err) {
+      expect(err.message).toContain(path.join(root, '.specshield.yml'));
+    }
+  });
+
+  it('CLI flag override beats the placeholder (user can re-run with --org=foo without editing the file)', () => {
+    const root = makeTmp({
+      '.specshield.yml': [
+        'bdct:',
+        '  org: <replace-me>',
+        '  provider:',
+        '    name: svc',
+        '    spec: a.yaml',
+      ].join('\n') + '\n',
+    });
+    const opts = { org: 'acme-pay', version: 'v1' };
+    expect(() => applyBdctDefaults(opts, 'publish-provider', { cwd: root }))
+      .not.toThrow();
+    expect(opts.org).toBe('acme-pay');
+  });
+
+  it('placeholder check ignores fields not in the FIELDS list', () => {
+    // Something the user wrote into the config with <replace-me> that's
+    // not one of the BDCT fields shouldn't trigger the check.
+    const root = makeTmp({
+      '.specshield.yml': [
+        'bdct:',
+        '  org: acme',
+        '  provider:',
+        '    name: svc',
+        '    spec: a.yaml',
+        'somethingUnrelated: <replace-me>',
+      ].join('\n') + '\n',
+    });
+    const opts = { version: 'v1' };
+    expect(() => applyBdctDefaults(opts, 'publish-provider', { cwd: root }))
+      .not.toThrow();
+  });
+});

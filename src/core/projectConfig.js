@@ -157,6 +157,25 @@ function applyBdctDefaults(opts, command, { cwd = process.cwd() } = {}) {
     opts[f] = (f === 'spec' || f === 'contract') ? resolvePath(def) : def;
   }
 
+  // Placeholder check — `<replace-me>` is the marker `specshield init` writes
+  // for fields the user skipped during the wizard. Letting it flow through
+  // would send the literal string to the backend, producing confusing 4xx
+  // errors. Refuse with a message that points at the file and field.
+  const placeholders = FIELDS
+    .filter(f => opts[f] === '<replace-me>')
+    .map(f => '--' + f.replace(/[A-Z]/g, m => '-' + m.toLowerCase()));
+  if (placeholders.length > 0) {
+    const where = cfg._file ? cfg._file : '(no config file found)';
+    const err = new Error(
+      `The following value${placeholders.length === 1 ? ' is' : 's are'} still set to ` +
+      `the "<replace-me>" placeholder written by \`specshield init\`: ` +
+      placeholders.join(', ') + '\n' +
+      `Edit ${where} (or pass real values as CLI flags) before re-running.`);
+    err.code = 'UNRESOLVED_PLACEHOLDER';
+    err.placeholders = placeholders;
+    throw err;
+  }
+
   // Required-field check.
   const required = REQUIRED_FIELDS[command] || [];
   const missing  = required.filter(k => !opts[k]);

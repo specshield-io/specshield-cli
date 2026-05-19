@@ -25,6 +25,17 @@ const DEFAULT_SERVER = 'https://specshield.io';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
+const PLACEHOLDER = '<replace-me>';
+
+// Skippable text fields in the interactive wizard. Empty values for these
+// become PLACEHOLDER tokens in the generated config; non-skippable fields
+// (kind, contractFormat, environment which has a default) are not in this list.
+const PLACEHOLDER_FIELDS = [
+  'providerName', 'specPath',
+  'consumerName', 'consumerProvider', 'contractPath',
+  'org',
+];
+
 function abortIfCancelled(answers, keys) {
   // `prompts` returns undefined values when the user hits Ctrl-C.
   for (const k of keys) {
@@ -33,6 +44,42 @@ function abortIfCancelled(answers, keys) {
       process.exit(2);
     }
   }
+}
+
+/**
+ * Replace empty answers with the PLACEHOLDER token so the generated config
+ * makes the gap visible (vs writing an empty string the user might miss).
+ * Only operates on the fields listed in PLACEHOLDER_FIELDS — required
+ * non-text choices like `kind` are left untouched.
+ */
+function fillPlaceholders(answers) {
+  for (const f of PLACEHOLDER_FIELDS) {
+    if (answers[f] === '' || answers[f] === null || answers[f] === undefined) continue;
+    // Keep the value the user entered.
+  }
+  for (const f of PLACEHOLDER_FIELDS) {
+    if (answers[f] === '' || answers[f] === null) answers[f] = PLACEHOLDER;
+  }
+}
+
+/**
+ * Walk a built config object and return a list of `{ path, value }` for every
+ * leaf whose value equals PLACEHOLDER. The `path` is the dotted YAML path
+ * (e.g. `bdct.org`, `bdct.provider.spec`) — same form the user sees when
+ * editing the .specshield.yml file.
+ */
+function collectPlaceholders(cfg) {
+  const out = [];
+  const walk = (obj, prefix) => {
+    if (!obj || typeof obj !== 'object') return;
+    for (const [k, v] of Object.entries(obj)) {
+      const p = prefix ? `${prefix}.${k}` : k;
+      if (v === PLACEHOLDER) out.push({ path: p, value: v });
+      else if (v && typeof v === 'object') walk(v, p);
+    }
+  };
+  walk(cfg, '');
+  return out;
 }
 
 async function validateApiKey(server, key) {
@@ -156,12 +203,21 @@ async function interactiveFlow(detected, opts) {
   const wantsProvider = k.kind === 'provider' || k.kind === 'both';
   const wantsConsumer = k.kind === 'consumer' || k.kind === 'both';
 
+  // Optional-by-default prompts. Pressing Enter on any text field is OK
+  // and produces a "<replace-me>" placeholder in the generated config —
+  // surfaced at the end of the wizard and refused by any bdct command
+  // that later tries to use it. Lets a user explore the wizard without
+  // having to know their org key or provider name up front.
+  const skipHint = chalk.gray('(press Enter to skip — fill in later)');
+
   if (wantsProvider) {
     const provQs = [
-      { type: 'text', name: 'providerName', message: 'Provider name', initial: detected.serviceName },
-      { type: 'text', name: 'specPath',     message: 'Path to provider OpenAPI spec',
-        initial: detected.spec || 'api/openapi.yaml',
-        validate: (v) => v ? true : 'Required',
+      { type: 'text', name: 'providerName',
+        message: `Provider name ${skipHint}`,
+        initial: detected.serviceName },
+      { type: 'text', name: 'specPath',
+        message: `Path to provider OpenAPI spec ${skipHint}`,
+        initial: detected.spec || 'openapi.yaml',
       },
     ];
     const r = await prompts(provQs);
@@ -171,15 +227,14 @@ async function interactiveFlow(detected, opts) {
 
   if (wantsConsumer) {
     const consQs = [
-      { type: 'text', name: 'consumerName',     message: 'Consumer name',
+      { type: 'text', name: 'consumerName',
+        message: `Consumer name ${skipHint}`,
         initial: detected.serviceName },
-      { type: 'text', name: 'consumerProvider', message: 'Provider this consumer talks to',
-        validate: (v) => v ? true : 'Required',
-      },
-      { type: 'text', name: 'contractPath',     message: 'Path to consumer contract',
-        initial: 'contracts/contract.yaml',
-        validate: (v) => v ? true : 'Required',
-      },
+      { type: 'text', name: 'consumerProvider',
+        message: `Provider this consumer talks to ${skipHint}` },
+      { type: 'text', name: 'contractPath',
+        message: `Path to consumer contract ${skipHint}`,
+        initial: 'contracts/contract.yaml' },
       { type: 'select', name: 'contractFormat', message: 'Contract format',
         choices: [
           { title: 'OpenAPI', value: 'OPENAPI' },
@@ -243,8 +298,8 @@ async function interactiveFlow(detected, opts) {
       });
       abortIfCancelled(r, ['org']);
       if (r.org === '__manual__') {
-        const m = await prompts({ type: 'text', name: 'org', message: 'Org key',
-          validate: (v) => v ? true : 'Required' });
+        const m = await prompts({ type: 'text', name: 'org',
+          message: `Org key ${skipHint}` });
         abortIfCancelled(m, ['org']);
         answers.org = m.org;
       } else {
@@ -252,8 +307,8 @@ async function interactiveFlow(detected, opts) {
       }
     } else {
       const r = await prompts({
-        type: 'text', name: 'org', message: 'Org key',
-        validate: (v) => v ? true : 'Required',
+        type: 'text', name: 'org',
+        message: `Org key ${skipHint}`,
       });
       abortIfCancelled(r, ['org']);
       answers.org = r.org;
@@ -409,6 +464,11 @@ const initCommand = new Command('init')
       if (answers === null) return;     // user said "don't overwrite"
     }
 
+    // Empty answers from the interactive flow → "<replace-me>" placeholders.
+    // The end-of-wizard summary lists every placeholder by path so users
+    // don't accidentally commit them.
+    fillPlaceholders(answers);
+
     const cfg  = buildConfig(answers, detected);
     const yaml = render(cfg);
 
@@ -443,6 +503,21 @@ const initCommand = new Command('init')
       ok(`Wrote ${chalk.white(path.relative(cwd, workflowPath))}`);
     }
 
+    // Placeholders summary — if the user pressed Enter on any prompt,
+    // surface what's still missing so they can fill it in before running
+    // any bdct command. Pre-flight checks in bdct.js will block commands
+    // that hit a literal "<replace-me>" value at runtime.
+    const placeholders = collectPlaceholders(cfg);
+    if (placeholders.length > 0) {
+      fmtSection('Placeholders to fill in');
+      placeholders.forEach(p =>
+        warn(`${chalk.yellow(p.path)} = ${chalk.gray('<replace-me>')}`));
+      warn(chalk.yellow(
+        `Edit ${path.relative(cwd, target) || '.specshield.yml'} ` +
+        `to replace ${placeholders.length} placeholder${placeholders.length === 1 ? '' : 's'} ` +
+        `before running bdct commands.`));
+    }
+
     fmtSection('Next steps');
     if (answers.kind !== 'skip') {
       info(`Try: ${chalk.white('specshield bdct list-providers')}`);
@@ -453,3 +528,6 @@ const initCommand = new Command('init')
   });
 
 module.exports = initCommand;
+
+// Exposed for unit tests — keep usage internal to the init module otherwise.
+module.exports.__test__ = { fillPlaceholders, collectPlaceholders, PLACEHOLDER };

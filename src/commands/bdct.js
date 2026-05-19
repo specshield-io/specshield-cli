@@ -41,7 +41,7 @@ function withProjectDefaults(opts, command) {
   try {
     applyBdctDefaults(opts, command);
   } catch (err) {
-    if (err.code === 'MISSING_REQUIRED_OPTIONS') {
+    if (err.code === 'MISSING_REQUIRED_OPTIONS' || err.code === 'UNRESOLVED_PLACEHOLDER') {
       logger.error(err.message);
       process.exit(2);
     }
