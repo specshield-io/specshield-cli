@@ -9,6 +9,7 @@ const logoutCommand = require('./commands/logout');
 const bdctCommand = require('./commands/bdct');
 const historyCommand = require('./commands/history');
 const shareCommand = require('./commands/share');
+const whoamiCommand = require('./commands/whoami');
 
 const program = new Command();
 
@@ -28,6 +29,7 @@ program.addCommand(logoutCommand);
 program.addCommand(bdctCommand);
 program.addCommand(historyCommand);
 program.addCommand(shareCommand);
+program.addCommand(whoamiCommand);
 
 program.parseAsync(process.argv).catch((err) => {
   const logger = require('./utils/logger');
