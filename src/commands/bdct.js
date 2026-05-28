@@ -689,6 +689,164 @@ const listConsumersCommand = new Command('list-consumers')
     }
   });
 
+// ─── capture (Fix 2 — turn recorded traffic into a consumer contract) ────────
+// Reads a HAR file (any browser/Cypress/Playwright/k6 can export one) and
+// emits an OpenAPI 3.0 consumer-contract subset describing only the
+// endpoints/fields the consumer actually called/read. Pure local CLI work —
+// no API token required.
+
+const captureFromHarCommand = new Command('from-har')
+  .description('Generate a consumer OpenAPI contract from a recorded HAR file')
+  .requiredOption('--in <path>',          'Input HAR file (HTTP Archive 1.2)')
+  .option('--out <path>',                 'Output file (default: write to stdout)')
+  .option('--base-url <url>',             'Keep only entries matching this URL prefix (e.g. https://api.acme.com or https://api.acme.com/v1)')
+  .option('--method <verbs>',             'Comma-separated methods to include (e.g. GET,POST). Default: all')
+  .option('--title <title>',              'OpenAPI info.title', 'Captured consumer contract')
+  .option('--version <ver>',              'OpenAPI info.version', '0.1.0')
+  .option('--format <fmt>',               'Output format: yaml | json', 'yaml')
+  .option('--include-non-json',           'Keep entries with non-JSON bodies (default: drop them)')
+  .action(async (opts) => {
+    const { captureFromHarFile } = require('../core/har');
+    const inputPath = path.resolve(opts.in);
+    if (!fsExtra.existsSync(inputPath)) {
+      logger.error(`HAR file not found: ${inputPath}`);
+      process.exit(2);
+    }
+    const methods = opts.method
+      ? opts.method.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined;
+
+    let result;
+    try {
+      result = captureFromHarFile(inputPath, {
+        baseUrl: opts.baseUrl,
+        methods,
+        onlyJson: !opts.includeNonJson,
+        title: opts.title,
+        version: opts.version,
+        format: opts.format,
+      });
+    } catch (err) {
+      logger.error(err.message);
+      process.exit(1);
+    }
+
+    if (opts.out) {
+      const outPath = path.resolve(opts.out);
+      fsExtra.outputFileSync(outPath, result.text);
+      process.stderr.write(chalk.green('✔ ') +
+        `Wrote ${chalk.cyan(opts.out)}  ` +
+        chalk.gray(`(${result.summary.endpoints} endpoints, ${result.summary.operations} ops from ${result.summary.recordsKept}/${result.summary.harEntries} entries)`) + '\n');
+    } else {
+      process.stdout.write(result.text);
+      process.stderr.write(chalk.gray(
+        `# ${result.summary.endpoints} endpoints, ${result.summary.operations} ops from ${result.summary.recordsKept}/${result.summary.harEntries} HAR entries\n`
+      ));
+    }
+  });
+
+const captureCommand = new Command('capture')
+  .description('Capture a consumer OpenAPI contract from observed traffic (currently: HAR ingest)');
+captureCommand.addCommand(captureFromHarCommand);
+
+// ─── verify-provider (Fix 3 — spec-vs-production conformance) ─────────────────
+// Fires probes derived from the OpenAPI spec at the running provider and
+// validates that every response body actually matches its documented schema.
+// Pure local CLI work (calls the customer's service directly); no API token.
+// Safe-by-default: only GET/HEAD/OPTIONS unless --include-mutating.
+
+const verifyProviderCommand = new Command('verify-provider')
+  .description('Check that a running provider service matches its OpenAPI spec')
+  .requiredOption('--spec <path>',         'Path to the provider OpenAPI spec (YAML or JSON)')
+  .requiredOption('--base-url <url>',      'Base URL of the running provider, e.g. https://staging.payments.acme.com')
+  .option('--include-mutating',            'Also probe POST/PUT/PATCH/DELETE (off by default for safety)')
+  .option('--path-params <kvList>',        'Resolve path params: name=val,other=val (overrides spec examples)', collectPathParams, {})
+  .option('--header <header>',             'Extra request header to send, e.g. "Authorization: Bearer X" (repeatable)', collectHeaders, {})
+  .option('--timeout-ms <ms>',             'Per-request timeout in ms', v => parseInt(v, 10), 8000)
+  .option('--json',                        'Output raw JSON instead of the human report')
+  .action(async (opts) => {
+    const { verifyProvider } = require('../core/conformance');
+    const specPath = path.resolve(opts.spec);
+    if (!fsExtra.existsSync(specPath)) {
+      logger.error(`Spec file not found: ${specPath}`);
+      process.exit(2);
+    }
+    const spinner = opts.json ? null : ora('Probing provider…').start();
+    let report;
+    try {
+      report = await verifyProvider({
+        spec: specPath,
+        baseUrl: opts.baseUrl,
+        includeMutating: !!opts.includeMutating,
+        pathParams: opts.pathParams,
+        headers: opts.header,
+        timeoutMs: opts.timeoutMs,
+      });
+    } catch (err) {
+      if (spinner) spinner.fail('Conformance run failed');
+      logger.error(err.message);
+      process.exit(1);
+    }
+    if (spinner) spinner.stop();
+
+    if (opts.json) {
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      process.exit(report.summary.fail + report.summary.error > 0 ? 1 : 0);
+    }
+
+    // Human report.
+    process.stdout.write('\n' + chalk.bold('  Provider conformance — spec vs ') + chalk.cyan(opts.baseUrl) + '\n');
+    process.stdout.write('  ' + '─'.repeat(60) + '\n');
+    for (const r of report.results) {
+      const label = `${r.method.padEnd(6)} ${r.routePath}`;
+      const tag =
+        r.status === 'PASS'    ? chalk.green('  PASS  ') :
+        r.status === 'FAIL'    ? chalk.red('  FAIL  ')   :
+        r.status === 'ERROR'   ? chalk.red(' ERROR  ')   :
+                                  chalk.yellow(' SKIP   ');
+      process.stdout.write(`  ${tag} ${label}` +
+        (r.httpStatus ? chalk.gray(`  (${r.httpStatus})`) : '') + '\n');
+      if (r.status === 'FAIL' && r.mismatches && r.mismatches.length > 0) {
+        for (const m of r.mismatches.slice(0, 5)) {
+          process.stdout.write(chalk.gray(`           ${m.path || '(root)'}: ${m.message}\n`));
+        }
+        if (r.mismatches.length > 5) {
+          process.stdout.write(chalk.gray(`           …and ${r.mismatches.length - 5} more\n`));
+        }
+      } else if (r.status === 'FAIL' && r.reason) {
+        process.stdout.write(chalk.gray(`           ${r.reason}\n`));
+      } else if (r.status === 'ERROR') {
+        process.stdout.write(chalk.gray(`           ${r.error}\n`));
+      } else if (r.status === 'SKIPPED') {
+        process.stdout.write(chalk.gray(`           ${r.reason}: ${r.skipReason}\n`));
+      }
+    }
+    const s = report.summary;
+    process.stdout.write('  ' + '─'.repeat(60) + '\n');
+    process.stdout.write(`  ${s.pass} pass · ${s.fail} fail · ${s.error} error · ${s.skipped} skip   (${s.total} probes)\n\n`);
+    process.exit(s.fail + s.error > 0 ? 1 : 0);
+  });
+
+// Repeatable --header parser: collects into a map.
+function collectHeaders(val, acc) {
+  const idx = val.indexOf(':');
+  if (idx < 0) return acc;
+  const k = val.slice(0, idx).trim();
+  const v = val.slice(idx + 1).trim();
+  if (k) acc[k] = v;
+  return acc;
+}
+
+// --path-params name=val,name=val parser: merges into the accumulator so the
+// flag can be passed multiple times.
+function collectPathParams(val, acc) {
+  for (const pair of String(val).split(',')) {
+    const [k, ...rest] = pair.split('=');
+    if (k && k.trim()) acc[k.trim()] = rest.join('=').trim();
+  }
+  return acc;
+}
+
 // ─── Parent bdct command ──────────────────────────────────────────────────────
 
 const bdct = new Command('bdct')
@@ -702,5 +860,7 @@ bdct.addCommand(listCommand);
 bdct.addCommand(matrixCommand);
 bdct.addCommand(listProvidersCommand);
 bdct.addCommand(listConsumersCommand);
+bdct.addCommand(captureCommand);
+bdct.addCommand(verifyProviderCommand);
 
 module.exports = bdct;
