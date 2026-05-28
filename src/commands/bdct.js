@@ -70,6 +70,8 @@ function hr() {
   return chalk.gray('  ─────────────────────────────────────────────────────');
 }
 
+const { stripVersionPrefix } = require('../util/versionStrip');
+
 /**
  * Flatten a verification result's mismatches.
  * Current backend returns `resultJson` (JSON string of [{endpoint,status,mismatches:[...]}]).
@@ -275,6 +277,11 @@ const verifyCommand = new Command('verify')
     const token = await resolveApiToken(opts);
     requireToken(token);
 
+    // Tolerate a leading `v` on either version (see can-i-deploy for the
+    // full rationale — readers paste back display values like `v1.0.0`).
+    opts.consumerVersion = stripVersionPrefix(opts.consumerVersion);
+    opts.providerVersion = stripVersionPrefix(opts.providerVersion);
+
     const spinner = opts.json ? null : ora(`Verifying ${opts.consumer} → ${opts.provider}...`).start();
 
     try {
@@ -361,6 +368,13 @@ const canIDeployCommand = new Command('can-i-deploy')
     const token = await resolveApiToken(opts);
     requireToken(token);
 
+    // Both the UI and the CLI render versions as `v<version>` for readability.
+    // When a user reads that and pastes it back into `--version`, the query
+    // silently matches nothing (the stored value never has a leading `v`).
+    // Strip a `v` that's followed by a digit, then use the cleaned version
+    // for the network call AND the human display so we never print `vv…`.
+    opts.version = stripVersionPrefix(opts.version);
+
     const spinner = opts.json ? null : ora(`Checking deployment safety for ${opts.service}@${opts.version}...`).start();
 
     try {
@@ -380,11 +394,15 @@ const canIDeployCommand = new Command('can-i-deploy')
         process.exit(deployable ? 0 : 1);
       }
 
+      // Idempotent `v` prefix on display — don't double it when the stored
+      // version legitimately starts with `v` (e.g. `vendor-tag-99`). Mirrors
+      // the UI pill at `BdctCanIDeploy.jsx:392`.
+      const vDisplay = /^v/i.test(opts.version) ? opts.version : `v${opts.version}`;
       process.stdout.write('\n');
       if (deployable) {
-        process.stdout.write(chalk.green.bold('  ✔  PASS') + chalk.white(`: ${opts.service} v${opts.version} is deployable${envLabel}\n`));
+        process.stdout.write(chalk.green.bold('  ✔  PASS') + chalk.white(`: ${opts.service} ${vDisplay} is deployable${envLabel}\n`));
       } else {
-        process.stdout.write(chalk.red.bold('  ✖  FAIL') + chalk.white(`: ${opts.service} v${opts.version} is NOT deployable${envLabel}\n`));
+        process.stdout.write(chalk.red.bold('  ✖  FAIL') + chalk.white(`: ${opts.service} ${vDisplay} is NOT deployable${envLabel}\n`));
       }
       process.stdout.write(hr() + '\n');
 
