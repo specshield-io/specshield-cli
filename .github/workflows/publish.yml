@@ -43,6 +43,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ─── Diagnostics: prove what auth/registry the publish step will use ──
+      # `continue-on-error` so a failing `whoami` (the most common cause of
+      # the misleading "404 — not in this registry" on publish) still lets
+      # the next two diagnostic steps run and emit their output to the log.
+      - name: Diagnostic — npm whoami
+        run: npm whoami
+        continue-on-error: true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Diagnostic — npm owner ls specshield
+        run: npm owner ls specshield
+        continue-on-error: true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Diagnostic — npm config get registry
+        run: npm config get registry
+        continue-on-error: true
+
       - name: Publish
         run: npm publish --specshield --access public
         env:
