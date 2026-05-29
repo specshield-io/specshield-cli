@@ -1,0 +1,14 @@
+{
+  "name": "specshield-playwright-har-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal starter — Playwright records HAR, specshield turns it into an OpenAPI consumer contract.",
+  "scripts": {
+    "test:setup": "playwright install chromium",
+    "test":       "playwright test",
+    "capture":    "specshield bdct capture from-har --in traffic.har --base-url $BASE_URL --out consumer-contract.yaml"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

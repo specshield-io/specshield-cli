@@ -1,0 +1,114 @@
+# Weekly smoke test for examples/playwright-har/ against the LATEST PUBLISHED
+# specshield on npm. Catches the case where a CLI flag/option change made it
+# to a release but the example wasn't updated.
+#
+# Quiet by design:
+#   * No push/PR trigger — never runs on commits.
+#   * Schedule + workflow_dispatch only.
+#   * Skips (does not fail) when jsonplaceholder.typicode.com is unreachable.
+#   * No issue creation, no PR comments. Default GitHub "workflow failed"
+#     email is the only notification surface.
+#   * Concurrency-grouped so a manual run queues behind any in-progress one.
+#   * Artifacts uploaded only on failure — passing runs leave no trail.
+
+name: Examples smoke (weekly)
+
+on:
+  schedule:
+    # Mondays 09:17 UTC — odd minute avoids GitHub's top-of-hour scheduling
+    # spike, off-peak so it won't interfere with anything else.
+    - cron: '17 9 * * 1'
+  workflow_dispatch: {}
+
+concurrency:
+  group: examples-smoke
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  playwright-har:
+    name: Playwright → HAR → bdct capture (against specshield@latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: examples/playwright-har
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe upstream sandbox; skip if down
+        id: upstream
+        working-directory: .
+        run: |
+          if curl -fsS -o /dev/null --max-time 10 https://jsonplaceholder.typicode.com/users; then
+            echo "up=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "up=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::jsonplaceholder.typicode.com unreachable — skipping smoke (not a real failure)."
+          fi
+
+      - name: Set up Node 20
+        if: steps.upstream.outputs.up == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install specshield@latest (from npm — version-skew check is the whole point)
+        if: steps.upstream.outputs.up == 'true'
+        working-directory: .
+        run: |
+          npm install -g specshield@latest
+          echo "::notice::Smoke running against specshield $(specshield --version)"
+
+      - name: Install example deps
+        if: steps.upstream.outputs.up == 'true'
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright test → traffic.har
+        if: steps.upstream.outputs.up == 'true'
+        run: npm test
+
+      - name: HAR → consumer-contract.yaml
+        if: steps.upstream.outputs.up == 'true'
+        run: |
+          specshield bdct capture from-har \
+            --in       traffic.har \
+            --base-url https://jsonplaceholder.typicode.com \
+            --out      consumer-contract.yaml
+
+      - name: Sanity-check the generated contract
+        if: steps.upstream.outputs.up == 'true'
+        run: |
+          if [ ! -s consumer-contract.yaml ]; then
+            echo "::error::consumer-contract.yaml is empty or missing"
+            exit 1
+          fi
+          # At least 3 path entries expected (we make 5 distinct calls
+          # collapsing to 4 endpoints). Use the YAML 2-space top-level
+          # path indent as a cheap probe; refine if the format changes.
+          PATHS=$(grep -cE '^  /' consumer-contract.yaml || true)
+          if [ "$PATHS" -lt 3 ]; then
+            echo "::error::Expected ≥3 paths in consumer-contract.yaml, got $PATHS"
+            grep -E '^paths:|^  /' consumer-contract.yaml || true
+            exit 1
+          fi
+          echo "::notice::OK — $PATHS paths emitted in the generated contract"
+
+      - name: Upload generated artifacts (on failure only)
+        if: failure() && steps.upstream.outputs.up == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failure-artifacts
+          path: |
+            examples/playwright-har/traffic.har
+            examples/playwright-har/consumer-contract.yaml
+            examples/playwright-har/test-results/
+            examples/playwright-har/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7

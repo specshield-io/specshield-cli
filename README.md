@@ -486,62 +486,361 @@ specshield bdct can-i-deploy --org acme-store --service payment-service --versio
 
 ---
 
-# `bdct capture from-har` — record real traffic, get a consumer contract
+# `bdct capture from-har` — turn real traffic into a consumer contract
 
-**The Pact alternative for teams that don't want to adopt a DSL.**
+**This is the feature that makes BDCT actually work for normal teams.**
+Pact requires every consumer team to learn a DSL, instrument their tests,
+and run a broker. SpecShield asks for something they already have: a
+recording of an HTTP test run, in the universal HAR format that every
+browser, every test framework, and every recording proxy already produces.
 
-`from-har` reads a [HAR file](https://en.wikipedia.org/wiki/HAR_(file_format)) (HTTP Archive — any browser, Cypress, Playwright, k6, Insomnia, or Charles Proxy can export one), filters to your provider's host, infers an OpenAPI 3.0 consumer-contract subset from what your tests actually called, and writes it to a file you can publish with `bdct publish-consumer`.
+A hand-written consumer contract drifts the moment you forget a field. A
+HAR-derived contract reflects what your code **actually called**, every
+time you re-record. It's the difference between "we documented the
+integration" and "we proved the integration."
 
-Why this matters: a hand-written consumer subset can be wrong (you forget the `currency` field your code reads, and the provider can remove it without anyone noticing). A HAR recording **captures what your code actually does** — without the Pact DSL, language-agnostic, runs anywhere.
+### The 3-step mental model
 
-### Generate a contract from a recorded test run
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  1. RECORD                  2. CAPTURE                  3. GATE          │
+│                                                                          │
+│  Your existing test run  →  specshield bdct          →  publish-consumer │
+│  → traffic.har               capture from-har           verify           │
+│  (browser / Playwright /     → consumer-contract.yaml   can-i-deploy     │
+│   Cypress / mitmproxy /                                                  │
+│   Postman / k6 / …)         ← language-agnostic       ← every provider   │
+│                              CLI does the OpenAPI       PR re-checks     │
+│                              inference                  every consumer   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+Step 1 already happens in your team — you're just saving the file. Step 2
+is one CLI command. Step 3 is the BDCT registry you publish to.
+
+---
+
+## Step 1 — record a HAR file
+
+Pick the recorder that matches **how the consumer is exercised** in your
+project. You almost never have to write recorder code yourself.
+
+| Recorder | Use when the consumer is… | Effort |
+|---|---|---|
+| **[Browser DevTools](https://developer.chrome.com/docs/devtools/network/reference#save)** (Chrome / Firefox / Edge / Safari) | A frontend SPA, a Swagger UI, or any browser-driven app | Zero code |
+| **[Playwright](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-har)** with `recordHar` | Exercised by Playwright UI/integration tests | **One config field** |
+| **[Cypress](https://github.com/NeuraLegion/cypress-har-generator)** + `cypress-har-generator` | Exercised by Cypress UI tests | One plugin |
+| **[mitmproxy](https://docs.mitmproxy.org/stable/addons-examples/#har-dump)** | A backend service-to-service caller in a test env | One brew install, no consumer changes |
+| **[Postman](https://learning.postman.com/docs/getting-started/importing-and-exporting/exporting-postman-data/#exporting-as-har)** / Insomnia / Bruno | Manually exercised during exploratory testing | Right-click → export |
+| **[k6](https://grafana.com/docs/k6/latest/results-output/real-time/json/#har)** load tests | Already running k6 against the provider | One `--out har=…` flag |
+
+**Recipes follow** — keep reading for the exact commands per tool, then jump
+to Step 2 (the capture command, which is identical regardless of recorder).
+
+### 1a. Chrome / Firefox / Edge DevTools (zero code — best for frontend)
+
+1. Open the page that calls your API in the browser.
+2. Open DevTools (`F12` / `Cmd+Opt+I`) → **Network** tab.
+3. Click the 🚫 button to clear, then reload the page and click through the
+   flows you want to record.
+4. Right-click anywhere in the request list → **Save all as HAR with
+   content** → save as `traffic.har`.
+
+That's the entire recording. The file is byte-compatible with everything
+SpecShield does.
+
+> **Safari note:** Safari's "Export HAR" is under the Develop menu →
+> *Export…* in the Network tab; it produces the same format.
+
+### 1b. Playwright (best for teams with UI tests)
+
+Add one option to your `playwright.config.js`:
+
+```js
+// playwright.config.js
+const path = require('path');
+module.exports = {
+  testDir: './tests',
+  use: {
+    baseURL: 'https://staging.acme.com',
+    recordHar: { path: path.resolve(__dirname, 'traffic.har'), mode: 'full', content: 'embed' },
+  },
+};
+```
+
+Run your tests as usual:
 
 ```bash
-# Record a HAR (one of many ways)
-#   - Chrome DevTools → Network → right-click → "Save all as HAR"
-#   - Playwright:  page.on('request')... or use BROWSER_TOOLS_HAR
-#   - Cypress:     cy.intercept(...) + plugins like cypress-har-generator
-#   - k6:          k6 run --out har=run.har script.js
+npx playwright test
+# → writes traffic.har on context close
+```
 
+The HAR will contain every HTTP call the browser made during the test —
+HTML, JS, images, and the API JSON. The `--onlyJson` default in Step 2
+filters out the noise automatically.
+
+> Need the HAR file flushed **per test**? Create the context explicitly in
+> your test and call `await context.close()` at the end. A runnable
+> copy-paste starter lives in [`examples/playwright-har/`](examples/playwright-har/)
+> of this repo — clone, `npm install`, `npx playwright install chromium`,
+> `npm test` produces `traffic.har` against the public JSONPlaceholder
+> sandbox so you can verify the toolchain works before pointing it at your
+> own provider.
+
+### 1c. Cypress
+
+```bash
+npm i -D @neuralegion/cypress-har-generator
+```
+
+```js
+// cypress.config.js
+const { install } = require('@neuralegion/cypress-har-generator');
+module.exports = { e2e: { setupNodeEvents(on, config) { install(on); return config; } } };
+
+// cypress/support/e2e.js
+beforeEach(() => cy.recordHar());
+afterEach(() => cy.saveHar({ outDir: './har-out' }));
+```
+
+Run `npx cypress run` and the HAR for each spec lands in `har-out/`.
+
+### 1d. mitmproxy (best for backend service-to-service)
+
+When the consumer is a backend service (no browser), point it through
+mitmproxy in your integration-test env. No consumer code change.
+
+```bash
+# Install once
+brew install mitmproxy            # macOS — also available via pip and apt
+
+# Start the proxy and tell it to dump HAR
+mitmdump --set hardump=traffic.har --listen-port 8080
+
+# In another terminal: run your tests with HTTPS_PROXY pointing at it
+HTTPS_PROXY=http://localhost:8080 HTTP_PROXY=http://localhost:8080 \
+  ./run-integration-tests.sh
+
+# Ctrl-C mitmdump when done — traffic.har is on disk
+```
+
+The `hardump` add-on is built into mitmproxy ≥ 9.0. For TLS hosts you'll
+need to trust mitmproxy's CA in your test JVM/runtime (see the
+[mitmproxy CA docs](https://docs.mitmproxy.org/stable/concepts-certificates/));
+in many test environments it's a single env var
+(`NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, or a
+JVM `cacerts` import).
+
+### 1e. Postman / Insomnia / Bruno
+
+Run the request (or a whole collection runner). Right-click the response
+→ **Save Response as HAR**. Repeat for each request you want included,
+then either keep them as separate `.har` files (pass `--in` once per file
+via a loop in CI) or merge them with any HAR-merge tool.
+
+### 1f. k6 load test (bonus — recording while load-testing)
+
+```bash
+k6 run --out har=traffic.har script.js
+```
+
+k6 emits a HAR alongside its load metrics. Same file works with
+`bdct capture from-har`.
+
+---
+
+## Step 2 — turn the HAR into a consumer contract
+
+This is the one CLI command. The same command works regardless of which
+recorder produced the HAR.
+
+```bash
 specshield bdct capture from-har \
-  --in tests/checkout-run.har \
+  --in       traffic.har \
   --base-url https://api.acme.com \
-  --out contracts/checkout-ui-payment.yaml
+  --out      consumer-contract.yaml
 ```
 
+Expected output:
+
 ```
-✔ Wrote contracts/checkout-ui-payment.yaml  (2 endpoints, 3 ops from 17/24 entries)
+✔ Wrote consumer-contract.yaml  (4 endpoints, 6 ops from 23/41 entries)
 ```
 
-### Options
+The `23/41` summary means **23 entries** survived the filters (right host,
+JSON body) out of **41 total** the recorder captured. Open the YAML to see
+exactly what your code talks to — endpoint by endpoint, field by field.
 
-| Flag | Purpose |
-|---|---|
-| `--in <path>`           | **Required.** Input HAR file (HTTP Archive 1.2). |
-| `--out <path>`          | Output file (default: stdout). |
-| `--base-url <url>`      | Keep only entries matching this URL prefix (e.g. `https://api.acme.com` or `https://api.acme.com/v1`). |
-| `--method <verbs>`      | Comma-separated methods to include (e.g. `GET,POST`). Default: all. |
-| `--title <title>`       | OpenAPI `info.title`. Default: `Captured consumer contract`. |
-| `--version <ver>`       | OpenAPI `info.version`. Default: `0.1.0`. |
-| `--format <fmt>`        | Output format: `yaml` (default) or `json`. |
-| `--include-non-json`    | Keep entries with non-JSON bodies (default: drop them — schemas can't be inferred). |
+### All options
 
-### What you get
+| Flag | Purpose | Default |
+|---|---|---|
+| `--in <path>`           | **Required.** Input HAR file (HAR 1.2). | — |
+| `--out <path>`          | Output file. If omitted, writes to stdout. | stdout |
+| `--base-url <url>`      | Keep only entries matching this URL prefix. Critical when the consumer talks to multiple backends — see "multi-host" below. | (no filter — keeps every host) |
+| `--method <verbs>`      | Comma-separated methods to include, e.g. `GET,POST`. | all methods |
+| `--title <title>`       | OpenAPI `info.title`. | `Captured consumer contract` |
+| `--version <ver>`       | OpenAPI `info.version` — usually your git SHA in CI. | `0.1.0` |
+| `--format <fmt>`        | `yaml` or `json`. | `yaml` |
+| `--include-non-json`    | Keep entries with non-JSON bodies (HTML, images, binary). Schemas can't be inferred but the endpoints will appear. | off |
 
-- **Path templating:** concrete paths like `/users/123/orders/abc-2026` are turned into `/users/{userId}/orders/{orderId}` (the param is named from the preceding noun, not a generic `{id}`).
-- **Per-status schema merging:** if two recorded GETs return slightly different shapes, the emitted schema is the merger — fields seen in EVERY sample stay `required`, fields seen in only SOME become optional, integer + number widens to number.
-- **Format detection:** UUIDs, RFC 3339 date-times, and emails get `format: uuid|date-time|email`.
-- **JSON-only by default:** non-JSON bodies are dropped (schemas can't be inferred from binary/HTML); override with `--include-non-json` for debugging.
+### What the engine actually does
 
-### Use the captured contract in BDCT
+For every HAR entry that passes the filters:
+
+- **Path templating.** `/users/123/orders/abc-2026` becomes
+  `/users/{userId}/orders/{orderId}`. Parameter names come from the
+  preceding noun in the URL — *not* a generic `{id}` — so the resulting
+  OpenAPI matches the parameter names your provider likely already uses
+  (`{userId}`, `{orderId}`, `{accountId}`, …).
+- **Per-status schema merging.** If three `GET /users/{userId}` samples
+  return slightly different shapes, the emitted schema is the *merger*:
+  fields seen in **every** sample stay `required`; fields seen in **some**
+  samples become optional; `integer` + `number` widens to `number`; a
+  type conflict falls back to `string`.
+- **Format detection.** UUIDs, RFC 3339 date-times, and email addresses
+  get `format: uuid` / `format: date-time` / `format: email`.
+- **Status-code coverage.** A 404 sample produces its own response schema
+  alongside the 200 — so the contract documents the error shapes your code
+  handles, not just the happy path.
+- **JSON-only by default.** Entries with non-JSON bodies are dropped; the
+  HTML page load from a Playwright test never ends up in the contract.
+
+---
+
+## Step 3 — publish + gate
 
 ```bash
+# 1. Publish the captured contract (run on every consumer PR)
 specshield bdct publish-consumer \
-  --org acme-store --consumer checkout-ui \
-  --provider payment-service --version 2.0.0 \
-  --contract contracts/checkout-ui-payment.yaml \
-  --format OPENAPI
+  --org   acme-store \
+  --consumer checkout-ui \
+  --provider payment-service \
+  --version  "$GIT_SHA" \
+  --format   OPENAPI \
+  --contract consumer-contract.yaml
+
+# 2. Gate the deploy (run before promoting the consumer)
+specshield bdct can-i-deploy \
+  --org acme-store \
+  --service checkout-ui --version "$GIT_SHA" --env staging
+# exit 0 = safe; exit 1 = a verification says NO and the deploy is blocked
 ```
+
+Full BDCT command reference is in the [Bi-Directional Contract Testing](#bi-directional-contract-testing-bdct)
+section above.
+
+---
+
+## Operational concerns (read this before going live)
+
+### Scrubbing auth tokens, cookies, and PII
+
+A raw HAR can contain `Authorization` headers, session cookies, and real
+PII in request/response bodies. **Scrub before publishing.** Two patterns:
+
+**Quick scrub with jq** (zero deps if you already have jq):
+
+```bash
+jq 'del(.. | .headers? | .[]? | select(.name | ascii_downcase | IN("authorization","cookie","set-cookie","x-api-key")))' \
+  traffic.har > scrubbed.har
+```
+
+**Heavier scrub via `har-sanitizer`** (npm tool — supports body redaction
+patterns, allowlists, etc.):
+
+```bash
+npx har-sanitizer --input traffic.har --output scrubbed.har --scrub-words 'email,ssn,creditCard'
+```
+
+The contract that `bdct capture from-har` emits only carries field *names
+and types* — not values — so once the HAR is scrubbed of secrets, the
+published contract is safe to share with the provider team.
+
+### Multi-host filtering (consumer talks to several backends)
+
+`--base-url` is a prefix match, so it doubles as a host filter:
+
+```bash
+# Keep only calls to the payment service
+specshield bdct capture from-har \
+  --in traffic.har --base-url https://payment.acme.com \
+  --out contracts/checkout-ui-payment.yaml
+
+# Same HAR, different provider — keep only calls to inventory
+specshield bdct capture from-har \
+  --in traffic.har --base-url https://inventory.acme.com \
+  --out contracts/checkout-ui-inventory.yaml
+```
+
+One test run → one HAR → N consumer contracts, one per provider.
+
+### Keeping contracts fresh in CI
+
+The whole pattern is "record from your existing tests, publish from CI." A
+typical `.github/workflows/contract-test.yml`:
+
+```yaml
+- name: Run integration tests (produces traffic.har)
+  run: npx playwright test            # or ./mvnw verify, or whatever you use
+
+- name: HAR → consumer contract
+  run: |
+    specshield bdct capture from-har \
+      --in traffic.har \
+      --base-url ${{ vars.PROVIDER_BASE_URL }} \
+      --out consumer-contract.yaml
+
+- name: Publish contract
+  env:
+    SPECSHIELD_API_KEY: ${{ secrets.SPECSHIELD_API_KEY }}
+  run: |
+    specshield bdct publish-consumer \
+      --org ${{ vars.SPECSHIELD_ORG }} \
+      --consumer ${{ vars.SERVICE_NAME }} \
+      --provider ${{ vars.PROVIDER_NAME }} \
+      --version  ${{ github.sha }} \
+      --format   OPENAPI \
+      --contract consumer-contract.yaml
+
+- name: Gate the deploy
+  env:
+    SPECSHIELD_API_KEY: ${{ secrets.SPECSHIELD_API_KEY }}
+  run: |
+    specshield bdct can-i-deploy \
+      --org ${{ vars.SPECSHIELD_ORG }} \
+      --service ${{ vars.SERVICE_NAME }} \
+      --version ${{ github.sha }} \
+      --env staging
+```
+
+Identical pattern on GitLab, CircleCI, Jenkins — only the secret-injection
+syntax changes.
+
+### Common pitfalls
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `0 endpoints, 0 ops from 0/N entries` | `--base-url` doesn't match any host in the HAR | Drop `--base-url` to see what hosts ARE in the HAR; re-run with the right prefix. |
+| Contract is missing your POST | Recorder captured a 4xx for that POST | Fix the test so the POST succeeds, OR keep the 4xx (it'll document the error path). |
+| Path got templated when you didn't want it to | A literal path segment looked like a numeric/UUID id | Path segments are templated when **multiple** entries share a prefix but differ on that segment. A single entry stays literal. |
+| Playwright HAR file is empty / not written | `context.close()` didn't run | Create the context explicitly with `chromium.launch()` → `browser.newContext({ recordHar })` and `await context.close()` at the end of the test. |
+| Backend rejects POST when mitmproxy is in the path | TLS cert not trusted by the consumer | See the mitmproxy CA-cert link above; one env var or one JKS import. |
+
+---
+
+## Why this is the most valuable piece of the CLI
+
+Every other contract-testing product on the market asks the consumer team
+to **change their code** — adopt a DSL, instrument their tests, run a
+broker. That tax is why most teams that "should" be doing contract testing
+aren't.
+
+`bdct capture from-har` removes the tax. Your team's existing test run is
+already the contract; the CLI just converts the format. The HAR-capture →
+publish → can-i-deploy loop is what turns "we have OpenAPI specs in a
+folder" into "no provider PR merges if it would break a deployed consumer"
+— with measurable enforcement, in one CI step, and no per-language SDK.
 
 ---
 

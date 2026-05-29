@@ -1,0 +1,22 @@
+# Belt-and-braces. The `files` whitelist in package.json is the primary
+# control — it explicitly lists what ships (bin, src, scripts, README.md,
+# CHANGELOG.md, LICENSE) and npm ignores everything else when `files` is
+# set. This file is here so that if someone removes the `files` array in
+# the future, runnable demos still don't get bundled into the installed
+# package.
+
+# Runnable demos / docs that live in the GitHub repo but should not bloat
+# the npm tarball.
+examples/
+demo/
+
+# Test + coverage artifacts
+tests/
+coverage/
+fixtures/
+*.test.js
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
