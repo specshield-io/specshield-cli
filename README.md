@@ -5,13 +5,40 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 [![node](https://img.shields.io/badge/node-%3E%3D20-green)](https://nodejs.org)
 
+## Contents
+
+**Get started**
+- [Quick Start](#quick-start) · [`specshield init` wizard](#specshield-init--first-run-setup-wizard) · [Login & Authentication](#login--authentication)
+
+**Why SpecShield**
+- [The Problem](#the-problem) · [The Solution](#the-solution) · [See It in Action](#see-it-in-action) · [Use Cases](#use-cases)
+- [Local vs Cloud](#local-vs-cloud) · [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
+
+**Commands — local & hosted compare**
+- [Local Compare](#local-compare) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
+
+**Bi-Directional Contract Testing (BDCT)**
+- [BDCT overview & full command reference](#bi-directional-contract-testing-bdct)
+- [`bdct capture from-har` — HAR → consumer contract](#bdct-capture-from-har--turn-real-traffic-into-a-consumer-contract)
+  - [Step 1 — record a HAR](#step-1--record-a-har-file) · [Step 2 — generate contract](#step-2--turn-the-har-into-a-consumer-contract) · [Step 3 — publish + gate](#step-3--publish--gate) · [Operational concerns](#operational-concerns-read-this-before-going-live)
+- [`bdct verify-provider` — spec-vs-production conformance](#bdct-verify-provider--does-your-live-provider-actually-match-its-spec)
+
+**CI/CD**
+- [GitHub Actions workflows](#cicd--github-actions)
+
+**Reference**
+- [Config File](#config-file) · [All Options](#all-options) · [Exit Codes](#exit-codes)
+
+**Project**
+- [License](#license) · [Support](#support)
+
 ---
 
 > **OpenAPI Diff · Breaking-Change Detection · Bi-Directional Contract Testing · `can-i-deploy` Gate · Pact-File Ingest · Live-Traffic Capture · Spec-vs-Production Conformance · GitHub PR Checks**
 
 ---
 
-## Never ship a breaking change to your API consumers.
+## Never ship a breaking change to your API consumers
 
 **SpecShield** is the one CLI that does four things to keep your API safe:
 
@@ -215,7 +242,9 @@ specshield compare base.yaml target.yaml --ignore "DELETE /admin removed" --fail
 
 ## Remote Compare
 
-Sends your specs to SpecShield and stores results in your dashboard. Requires a free account.
+Sends your specs to SpecShield's hosted diff engine. Useful for keeping the
+heavy comparison off your CI runner and for cross-validating against the
+exact engine the dashboard uses. Requires a free account.
 
 ```bash
 specshield compare base.yaml target.yaml --remote
@@ -223,15 +252,37 @@ specshield compare base.yaml target.yaml --remote --fail-on-breaking
 specshield compare base.yaml target.yaml --remote --json --output result.json
 ```
 
+> **History note:** `--remote` runs the diff on our servers but currently
+> does **not** persist the result to your comparison history (saving is
+> UI-only right now — see the
+> [Comparison History](#comparison-history) section below). To save a
+> comparison, run it from the dashboard at
+> [specshield.io/account/compare](https://specshield.io/account/compare).
+> A CLI-driven save is on the roadmap.
+
 ## Comparison History
 
-Every `specshield compare --remote` is saved to your account. List recent comparisons from any machine — useful for tracking API drift over time across CI pipelines + local runs.
+> **Status: currently UI-only.** Comparison history is available in the
+> dashboard at [specshield.io/account/history](https://specshield.io/account/history).
+> The `specshield history` CLI command exists but currently exits with a
+> "use the dashboard" message — a CLI-callable API endpoint is on the
+> roadmap (the backend's `/me/*` routes require browser-session JWT auth,
+> not the CLI's API key). The dashboard shows the same data and adds
+> per-comparison drill-down.
+
+Every comparison you run **in the dashboard's `/account/compare` page** is
+saved to your account. Useful for tracking API drift over time across team
+members + machines.
+
+The CLI command (once the backend endpoint ships):
 
 ```bash
 specshield history                # last 20 comparisons
 specshield history --limit 50
 specshield history --json
 ```
+
+Expected output (once enabled):
 
 ```
   Your recent comparisons
@@ -243,7 +294,15 @@ specshield history --json
 
 ## Share a Comparison
 
-Generate a public, tokenized URL for any comparison report. Great for Slack threads, PR comments, Jira tickets.
+> **Status: currently UI-only.** Share links are generated from the
+> dashboard — open any comparison at
+> [specshield.io/account/history](https://specshield.io/account/history)
+> and click the "Share" button. Same `/r/<token>` URL shape. The
+> `specshield share` CLI command currently exits with a "use the dashboard"
+> message; CLI integration ships when the backend exposes a CLI-callable
+> share-link endpoint.
+
+Once enabled, the CLI usage will be:
 
 ```bash
 # Share an existing report by ID (from `specshield history`)
@@ -262,7 +321,8 @@ specshield share 482 --expires 30
     Expires:  2026-06-16T12:34:56Z
 ```
 
-Links use a 256-bit random token (unguessable by enumeration). Revoke any time from the dashboard.
+Links use a 256-bit random token (unguessable by enumeration). Revoke any
+time from the dashboard.
 
 ## GitHub App — PR Checks
 

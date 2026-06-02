@@ -50,6 +50,14 @@ share
       process.exit(2);
     }
 
+    // The share-link endpoint lives on `/me/*` which currently requires
+    // browser-session JWT auth — the CLI's X-Api-Key gets redirected to
+    // /login. Until the backend exposes a CLI-callable endpoint, point
+    // users at the dashboard rather than letting the request fail opaquely.
+    printWebOnlyMessage();
+    process.exit(2);
+
+    // eslint-disable-next-line no-unreachable
     const spinner = ora('Generating share link...').start();
     try {
       const headers = { 'X-Api-Key': apiKey, 'X-SpecShield-Client': 'cli' };
@@ -115,6 +123,25 @@ function printSignupNudge() {
   console.log('    ' + chalk.gray('or visit https://specshield.io and sign in with GitHub / Google'));
   console.log('');
   console.log('  ' + chalk.gray('Cloud is free for personal use.'));
+  console.log('');
+}
+
+/**
+ * Surfaced because `/me/share-links` currently requires JWT (web sign-in).
+ * The CLI X-Api-Key gets redirected to /login. Until a CLI-callable endpoint
+ * exists, the dashboard is the way.
+ */
+function printWebOnlyMessage() {
+  console.log('');
+  console.log(chalk.bold('  Share links are currently UI-only.'));
+  console.log('');
+  console.log('  Generate a share link at:');
+  console.log('    ' + chalk.cyan('https://specshield.io/account/history'));
+  console.log('  (open any comparison → click "Share").');
+  console.log('');
+  console.log(chalk.gray('  CLI access is on the roadmap — needs a backend API endpoint that'));
+  console.log(chalk.gray('  accepts the CLI\'s X-Api-Key auth (currently `/me/*` routes require'));
+  console.log(chalk.gray('  the browser-session JWT). Until then, use the dashboard.'));
   console.log('');
 }
 
