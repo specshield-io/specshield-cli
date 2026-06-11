@@ -50,14 +50,6 @@ share
       process.exit(2);
     }
 
-    // The share-link endpoint lives on `/me/*` which currently requires
-    // browser-session JWT auth — the CLI's X-Api-Key gets redirected to
-    // /login. Until the backend exposes a CLI-callable endpoint, point
-    // users at the dashboard rather than letting the request fail opaquely.
-    printWebOnlyMessage();
-    process.exit(2);
-
-    // eslint-disable-next-line no-unreachable
     const spinner = ora('Generating share link...').start();
     try {
       const headers = { 'X-Api-Key': apiKey, 'X-SpecShield-Client': 'cli' };
@@ -65,17 +57,17 @@ share
 
       let reportId;
       if (target) {
-        // Inline-compare path: run a /compare with --remote semantics to
-        // persist the result, then immediately share the resulting history
-        // row. Two API calls but keeps the backend share endpoint single-purpose.
+        // Inline-compare path: run a /compare (which persists when called with
+        // a valid X-Api-Key), then immediately share the resulting history row.
+        // Two API calls but keeps the backend share endpoint single-purpose.
         spinner.text = 'Running remote comparison...';
         const baseSpec   = await loadSpec(reportOrBase);
         const targetSpec = await loadSpec(target);
         const compareResp = await axios.post(`${opts.apiUrl}/compare`,
           { baseSpec, targetSpec },
           { headers, timeout: 30000 });
-        // The /compare endpoint returns the diff; the persisted history ID is
-        // on the response (added by CompareHistoryService).
+        // The /compare endpoint returns the diff plus the persisted row's
+        // historyId (present because we authenticated with X-Api-Key).
         reportId = compareResp.data?.historyId || compareResp.data?.reportId;
         if (!reportId) {
           throw new Error('Comparison succeeded but no history ID was returned — cannot create share link.');
@@ -85,8 +77,17 @@ share
         reportId = reportOrBase;
       }
 
-      const response = await axios.post(`${opts.apiUrl}/me/share-links`,
-        { reportId, expiresInDays },
+      // The backend's reportId is a numeric history id. Validate before the
+      // call so a typo gets a clear message instead of a 400 from the server.
+      const numericReportId = Number(reportId);
+      if (!Number.isInteger(numericReportId) || numericReportId <= 0) {
+        spinner.stop();
+        logger.error(`Invalid report ID "${reportId}". Expected a numeric comparison ID — see "specshield history".`);
+        process.exit(2);
+      }
+
+      const response = await axios.post(`${opts.apiUrl}/api/share-links`,
+        { reportId: numericReportId, expiresInDays },
         { headers, timeout: 15000 });
       spinner.stop();
 
@@ -123,25 +124,6 @@ function printSignupNudge() {
   console.log('    ' + chalk.gray('or visit https://specshield.io and sign in with GitHub / Google'));
   console.log('');
   console.log('  ' + chalk.gray('Cloud is free for personal use.'));
-  console.log('');
-}
-
-/**
- * Surfaced because `/me/share-links` currently requires JWT (web sign-in).
- * The CLI X-Api-Key gets redirected to /login. Until a CLI-callable endpoint
- * exists, the dashboard is the way.
- */
-function printWebOnlyMessage() {
-  console.log('');
-  console.log(chalk.bold('  Share links are currently UI-only.'));
-  console.log('');
-  console.log('  Generate a share link at:');
-  console.log('    ' + chalk.cyan('https://specshield.io/account/history'));
-  console.log('  (open any comparison → click "Share").');
-  console.log('');
-  console.log(chalk.gray('  CLI access is on the roadmap — needs a backend API endpoint that'));
-  console.log(chalk.gray('  accepts the CLI\'s X-Api-Key auth (currently `/me/*` routes require'));
-  console.log(chalk.gray('  the browser-session JWT). Until then, use the dashboard.'));
   console.log('');
 }
 

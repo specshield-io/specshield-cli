@@ -97,18 +97,16 @@ compare
           logger.info(`Results saved to ${options.output}`);
         }
 
-        // Honest note for --remote when the backend didn't return a history
-        // ID. The `/compare` endpoint runs the diff but does NOT persist to
-        // the user's comparison history when called with X-Api-Key auth —
-        // that's a UI-only path right now (see the share/history commands).
-        // When/if the backend starts returning historyId, this note auto-hides.
+        // Note for an anonymous --remote: the diff ran but wasn't saved
+        // because no API key was sent. An authenticated --remote persists the
+        // comparison and the backend returns a historyId, so this note hides.
         if ((options.remote || options.remoteUrl)
             && !result.historyId && !result.reportId && !result.id) {
           const chalk = require('chalk');
           process.stdout.write('\n' + chalk.gray(
-            '  Note: --remote ran the diff on our servers but did NOT save it to your\n' +
-            '  comparison history (history save is currently UI-only). For history, run\n' +
-            '  the compare in the dashboard at https://specshield.io/account/compare.\n'
+            '  Note: --remote ran the diff but did NOT save it to your history\n' +
+            '  (no API key). Run "specshield login" (or set SPECSHIELD_API_KEY) to\n' +
+            '  save comparisons and unlock "specshield history" / "specshield share".\n'
           ));
         }
       }

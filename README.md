@@ -252,29 +252,16 @@ specshield compare base.yaml target.yaml --remote --fail-on-breaking
 specshield compare base.yaml target.yaml --remote --json --output result.json
 ```
 
-> **History note:** `--remote` runs the diff on our servers but currently
-> does **not** persist the result to your comparison history (saving is
-> UI-only right now — see the
-> [Comparison History](#comparison-history) section below). To save a
-> comparison, run it from the dashboard at
-> [specshield.io/account/compare](https://specshield.io/account/compare).
-> A CLI-driven save is on the roadmap.
+> **History note:** with an API key set (run `specshield login`, or pass
+> `--api-key` / `SPECSHIELD_API_KEY`), `--remote` saves each comparison to
+> your history and the response includes a `historyId` you can hand to
+> `specshield share`. Without a key the diff still runs — it just isn't saved.
 
 ## Comparison History
 
-> **Status: currently UI-only.** Comparison history is available in the
-> dashboard at [specshield.io/account/history](https://specshield.io/account/history).
-> The `specshield history` CLI command exists but currently exits with a
-> "use the dashboard" message — a CLI-callable API endpoint is on the
-> roadmap (the backend's `/me/*` routes require browser-session JWT auth,
-> not the CLI's API key). The dashboard shows the same data and adds
-> per-comparison drill-down.
-
-Every comparison you run **in the dashboard's `/account/compare` page** is
-saved to your account. Useful for tracking API drift over time across team
-members + machines.
-
-The CLI command (once the backend endpoint ships):
+Every comparison you run with `--remote` (and every one from the dashboard) is
+saved to your account — useful for tracking API drift over time across team
+members and machines. List them straight from the CLI:
 
 ```bash
 specshield history                # last 20 comparisons
@@ -282,7 +269,11 @@ specshield history --limit 50
 specshield history --json
 ```
 
-Expected output (once enabled):
+The dashboard at
+[specshield.io/account/history](https://specshield.io/account/history) shows
+the same data with per-comparison drill-down.
+
+Example output:
 
 ```
   Your recent comparisons
@@ -294,15 +285,13 @@ Expected output (once enabled):
 
 ## Share a Comparison
 
-> **Status: currently UI-only.** Share links are generated from the
-> dashboard — open any comparison at
-> [specshield.io/account/history](https://specshield.io/account/history)
-> and click the "Share" button. Same `/r/<token>` URL shape. The
-> `specshield share` CLI command currently exits with a "use the dashboard"
-> message; CLI integration ships when the backend exposes a CLI-callable
-> share-link endpoint.
+Generate a public `/r/<token>` link for any comparison — paste it into Slack, a
+GitHub PR comment, or a Jira ticket and anyone can view the diff without a
+SpecShield account. You can also create links from the dashboard (open a
+comparison at [specshield.io/account/history](https://specshield.io/account/history)
+→ "Share").
 
-Once enabled, the CLI usage will be:
+Usage:
 
 ```bash
 # Share an existing report by ID (from `specshield history`)

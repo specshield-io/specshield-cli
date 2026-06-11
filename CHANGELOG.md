@@ -1,5 +1,37 @@
 # SpecShield CLI changelog
 
+## 3.2.7 — 2026-06-12 — `history` + `share` now work from the CLI
+
+`specshield history` and `specshield share` were previously "UI-only" stubs —
+the backend's comparison-history and share-link endpoints lived on JWT-only
+routes that rejected the CLI's API key. The backend now exposes API-key-callable
+endpoints (`/api/compare-history`, `/api/share-links`) and `/compare` returns the
+saved comparison's id, so the full CLI/CI flow works end to end.
+
+### Added
+
+- **`specshield history`** lists your recent comparisons (id, breaking count,
+  date, `base → target`). Honors `--limit` and `--json`. Reads the new
+  `/api/compare-history` endpoint.
+- **`specshield share <id>`** generates a public `/r/<token>` link for a saved
+  comparison via the new `/api/share-links` endpoint. `--expires <days>` sets an
+  expiry. `specshield share <base> <target>` still compares-and-shares in one step.
+- **`compare --remote` now returns a `historyId`** when run with an API key —
+  feed it straight into `specshield share` (the CI "compare → share link in PR
+  comment" flow).
+
+### Changed
+
+- `compare --remote`'s footer is accurate again: with an API key the comparison
+  is saved (no note); without one it notes the diff ran but wasn't saved.
+- Removed the "currently UI-only" notices from `history` / `share` (and the
+  matching README callouts) now that both work.
+
+### Fixed
+
+- `specshield share` validates the report id is a positive number and gives a
+  clear message (pointing at `specshield history`) instead of a server 400.
+
 ## 3.2.3 — 2026-05-28 — BDCT fidelity: HAR capture + provider conformance
 
 Two new `bdct` sub-commands that close the contract-fidelity gap PactFlow

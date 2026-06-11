@@ -41,24 +41,14 @@ history
     const spinner = opts.json ? null : ora('Fetching your comparison history...').start();
     try {
       const size = parseInt(opts.limit, 10) || 20;
-      const response = await axios.get(`${opts.apiUrl}/me/compare-history`, {
-        // Backend uses Spring Data Page conventions: page (0-indexed) + size.
+      const response = await axios.get(`${opts.apiUrl}/api/compare-history`, {
+        // Backend paginates with page (0-indexed) + size; the /api endpoint
+        // returns a PagedResponse envelope ({ content, page, size, ... }).
         params: { page: 0, size },
         headers: { 'X-Api-Key': apiKey, 'X-SpecShield-Client': 'cli' },
         timeout: 10000,
       });
       if (spinner) spinner.stop();
-
-      // The /me/* routes currently require JWT (browser session) auth — the
-      // CLI's X-Api-Key isn't accepted, so the backend redirects to /login
-      // and axios follows the 302 to the SPA's HTML shell. Detect that and
-      // tell the user where the feature really lives, instead of silently
-      // returning an empty list.
-      if (typeof response.data === 'string'
-          && (response.data.includes('<!doctype') || response.data.includes('<html'))) {
-        printWebOnlyMessage(opts);
-        process.exit(2);
-      }
 
       const items = response.data?.content
                  || response.data?.items
@@ -115,33 +105,6 @@ function printSignupNudge() {
   console.log('    ' + chalk.gray('or visit https://specshield.io and sign in with GitHub / Google'));
   console.log('');
   console.log('  ' + chalk.gray('Cloud is free for personal use.'));
-  console.log('');
-}
-
-/**
- * Surfaced when the backend redirects our API-key request to /login (HTML
- * response). The /me/compare-history endpoint is currently JWT-only — the
- * web UI signs in via OAuth and uses a browser-session JWT. A CLI-callable
- * API endpoint is on the roadmap; until then, the dashboard is the way.
- */
-function printWebOnlyMessage(opts) {
-  if (opts.json) {
-    process.stdout.write(JSON.stringify({
-      error: 'CLI_UNAVAILABLE',
-      message: 'Comparison history is currently UI-only. The CLI API endpoint is on the roadmap.',
-      dashboard: 'https://specshield.io/account/history',
-    }, null, 2) + '\n');
-    return;
-  }
-  console.log('');
-  console.log(chalk.bold('  Comparison history is currently UI-only.'));
-  console.log('');
-  console.log('  View your comparisons at:');
-  console.log('    ' + chalk.cyan('https://specshield.io/account/history'));
-  console.log('');
-  console.log(chalk.gray('  CLI access is on the roadmap — needs a backend API endpoint that'));
-  console.log(chalk.gray('  accepts the CLI\'s X-Api-Key auth (currently `/me/*` routes require'));
-  console.log(chalk.gray('  the browser-session JWT). Until then, use the dashboard.'));
   console.log('');
 }
 
