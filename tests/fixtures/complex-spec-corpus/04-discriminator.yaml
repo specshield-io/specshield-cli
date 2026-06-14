@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: oneOf + discriminator
+  version: 1.0.0
+# Marker fields the engine must capture in GET /animal 200:
+#   petType (discriminator), wingspan (Bird), depth (Fish)
+paths:
+  /animal:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Bird'
+                  - $ref: '#/components/schemas/Fish'
+                discriminator:
+                  propertyName: petType
+                  mapping:
+                    bird: '#/components/schemas/Bird'
+                    fish: '#/components/schemas/Fish'
+components:
+  schemas:
+    Bird:
+      type: object
+      required: [petType, wingspan]
+      properties:
+        petType:
+          type: string
+        wingspan:
+          type: integer
+    Fish:
+      type: object
+      required: [petType, depth]
+      properties:
+        petType:
+          type: string
+        depth:
+          type: integer

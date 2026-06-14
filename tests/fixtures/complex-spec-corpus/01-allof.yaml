@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info:
+  title: AllOf composition (CONTROL — should be handled)
+  version: 1.0.0
+# Marker fields a correct engine must capture in the GET /account 200 response:
+#   id, email   (allOf merges Base + the inline object)
+paths:
+  /account:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Base'
+                  - type: object
+                    required: [email]
+                    properties:
+                      email:
+                        type: string
+components:
+  schemas:
+    Base:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string

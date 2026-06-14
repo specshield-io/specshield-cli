@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: Circular $ref (self-referential TreeNode)
+  version: 1.0.0
+# GET /tree returns a TreeNode whose children are TreeNodes (self-reference).
+# Primary check: does parse COMPLETE (no hang / no crash) under setResolveFully(true)?
+# Marker fields the engine must capture: label, children
+paths:
+  /tree:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreeNode'
+components:
+  schemas:
+    TreeNode:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TreeNode'

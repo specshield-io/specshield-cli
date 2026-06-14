@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info:
+  title: anyOf union
+  version: 1.0.0
+# Marker fields the engine must capture in GET /search 200:
+#   alpha (AlphaResult), beta (BetaResult)
+paths:
+  /search:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/AlphaResult'
+                  - $ref: '#/components/schemas/BetaResult'
+components:
+  schemas:
+    AlphaResult:
+      type: object
+      properties:
+        alpha:
+          type: string
+    BetaResult:
+      type: object
+      properties:
+        beta:
+          type: string

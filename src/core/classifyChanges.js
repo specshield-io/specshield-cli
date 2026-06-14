@@ -21,6 +21,10 @@ const BREAKING_TYPES = new Set([
   'REQUEST_TYPE_CHANGED',
   'RESPONSE_TYPE_CHANGED',
   'SCHEMA_REMOVED',
+  // Dropping a union variant, or changing the discriminator, breaks consumers
+  // that relied on the removed shape / the old discriminator.
+  'SCHEMA_VARIANT_REMOVED',
+  'SCHEMA_DISCRIMINATOR_CHANGED',
   // Constraint tightening: previously-valid values become invalid → breaking.
   'CONSTRAINT_TIGHTENED',
   // Pattern changes are treated as breaking (semantic safety: we can't
@@ -36,6 +40,8 @@ const ADDITION_TYPES = new Set([
   'RESPONSE_FIELD_ADDED',
   'RESPONSE_ADDED',
   'SCHEMA_ADDED',
+  // Adding a union variant is backwards-compatible.
+  'SCHEMA_VARIANT_ADDED',
 ]);
 
 const MODIFICATION_TYPES = new Set([

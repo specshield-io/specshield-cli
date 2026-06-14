@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: additionalProperties (free-form map / dictionary)
+  version: 1.0.0
+# GET /metrics returns a map of string -> Metric. Marker fields inside the
+# additionalProperties value schema the engine must capture:
+#   value, unit
+paths:
+  /metrics:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/Metric'
+components:
+  schemas:
+    Metric:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: number
+        unit:
+          type: string

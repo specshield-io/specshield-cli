@@ -177,7 +177,7 @@ describe('resolveSchema - $ref resolution', () => {
     expect(result.properties).toHaveProperty('b');
   });
 
-  test('handles oneOf by merging properties', () => {
+  test('keeps oneOf variants separate (variant-aware, not merged)', () => {
     const localSchemas = {
       X: { type: 'object', properties: { x: { type: 'string' } } },
       Y: { type: 'object', properties: { y: { type: 'integer' } } },
@@ -186,8 +186,12 @@ describe('resolveSchema - $ref resolution', () => {
       { oneOf: [{ $ref: '#/components/schemas/X' }, { $ref: '#/components/schemas/Y' }] },
       localSchemas
     );
-    expect(result.properties).toHaveProperty('x');
-    expect(result.properties).toHaveProperty('y');
+    // oneOf is no longer flattened into one object — each variant is preserved
+    // so the diff engine can compare variants individually.
+    expect(Array.isArray(result.oneOf)).toBe(true);
+    expect(result.oneOf).toHaveLength(2);
+    expect(result.oneOf[0].properties).toHaveProperty('x');
+    expect(result.oneOf[1].properties).toHaveProperty('y');
   });
 
   test('handles circular references without throwing', () => {

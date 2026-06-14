@@ -102,20 +102,30 @@ function resolveSchema(schema, schemas, depth = 0) {
     return resolveSchema(resolved, schemas, depth + 1);
   }
 
-  // Handle allOf / oneOf / anyOf by merging
+  // allOf = composition → merge into one combined object.
   if (schema.allOf) {
     return mergeSchemas(schema.allOf, schemas, depth);
   }
-  if (schema.oneOf || schema.anyOf) {
-    const list = schema.oneOf || schema.anyOf;
-    return mergeSchemas(list, schemas, depth);
+  // oneOf / anyOf are NOT merged — they're kept as separate variants below so
+  // the diff engine can compare variants individually (added/removed variants
+  // + per-variant field changes). This matches the backend's variant-aware
+  // model; merging would lose variant identity and over-mark `required`.
+
+  // OpenAPI 3.1 expresses nullability as a type array: `type: [x, "null"]`.
+  // Normalize that to a single base type + nullable flag so it compares cleanly
+  // against 3.0's `nullable: true` form and doesn't surface a bogus type change.
+  let resolvedType = schema.type;
+  let resolvedNullable = Boolean(schema.nullable);
+  if (Array.isArray(resolvedType)) {
+    if (resolvedType.includes('null')) resolvedNullable = true;
+    resolvedType = resolvedType.find((t) => t !== 'null') || 'object';
   }
 
   const node = {
-    type: schema.type || 'object',
+    type: resolvedType || 'object',
     format: schema.format || null,
     enum: schema.enum || null,
-    nullable: Boolean(schema.nullable),
+    nullable: resolvedNullable,
     required: Array.isArray(schema.required) ? schema.required : [],
     properties: {},
     items: null,
@@ -141,6 +151,23 @@ function resolveSchema(schema, schemas, depth = 0) {
 
   if (schema.items) {
     node.items = resolveSchema(schema.items, schemas, depth + 1);
+  }
+
+  // additionalProperties as a schema = a free-form map/dictionary value type
+  // (e.g. Map<String, Metric>). Boolean true/false is not a value schema.
+  if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+    node.additionalProperties = resolveSchema(schema.additionalProperties, schemas, depth + 1);
+  }
+
+  // oneOf / anyOf variants kept separate (variant-aware model).
+  if (Array.isArray(schema.oneOf)) {
+    node.oneOf = schema.oneOf.map((s) => resolveSchema(s, schemas, depth + 1));
+  }
+  if (Array.isArray(schema.anyOf)) {
+    node.anyOf = schema.anyOf.map((s) => resolveSchema(s, schemas, depth + 1));
+  }
+  if (schema.discriminator && schema.discriminator.propertyName) {
+    node.discriminator = schema.discriminator.propertyName;
   }
 
   return node;

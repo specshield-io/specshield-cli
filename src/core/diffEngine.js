@@ -323,6 +323,70 @@ function diffSchemaNode(path, method, fieldPrefix, base, target, diffs, isReques
       });
     }
   }
+
+  // additionalProperties (free-form map): compare the value schema so a
+  // breaking change inside map values is caught. ".<*>" denotes "any key".
+  if (base.additionalProperties || target.additionalProperties) {
+    const apField = `${fieldPrefix}.<*>`;
+    if (base.additionalProperties && target.additionalProperties) {
+      diffSchemaNode(path, method, apField, base.additionalProperties, target.additionalProperties, diffs, isRequest);
+    } else if (base.additionalProperties && !target.additionalProperties) {
+      diffs.push({
+        type: isRequest ? 'REQUEST_FIELD_REMOVED' : 'RESPONSE_FIELD_REMOVED',
+        path,
+        method,
+        field: apField,
+        description: `Map value schema (additionalProperties) removed from "${fieldPrefix}" in ${method.toUpperCase()} ${path}`,
+      });
+    }
+  }
+
+  // Discriminator rename/removal — breaks consumers keyed on the old name.
+  if (base.discriminator && base.discriminator !== target.discriminator) {
+    diffs.push({
+      type: 'SCHEMA_DISCRIMINATOR_CHANGED',
+      path,
+      method,
+      field: `${fieldPrefix}.discriminator`,
+      oldValue: base.discriminator,
+      newValue: target.discriminator || null,
+      description: `Discriminator at "${fieldPrefix}" changed from "${base.discriminator}" to "${target.discriminator || '(none)'}" in ${method.toUpperCase()} ${path}`,
+    });
+  }
+
+  // oneOf / anyOf variant comparison (positional; field-level changes inside a
+  // matched variant are caught by recursion). Mirrors the backend engine.
+  diffVariants(path, method, `${fieldPrefix}.oneOf`, base.oneOf, target.oneOf, diffs, isRequest);
+  diffVariants(path, method, `${fieldPrefix}.anyOf`, base.anyOf, target.anyOf, diffs, isRequest);
+}
+
+function diffVariants(path, method, fieldPrefix, baseVariants, targetVariants, diffs, isRequest) {
+  const b = Array.isArray(baseVariants) ? baseVariants : [];
+  const t = Array.isArray(targetVariants) ? targetVariants : [];
+  if (b.length === 0 && t.length === 0) return;
+
+  const matched = Math.min(b.length, t.length);
+  for (let i = 0; i < matched; i++) {
+    diffSchemaNode(path, method, `${fieldPrefix}[${i}]`, b[i], t[i], diffs, isRequest);
+  }
+  for (let i = t.length; i < b.length; i++) {
+    diffs.push({
+      type: 'SCHEMA_VARIANT_REMOVED',
+      path,
+      method,
+      field: `${fieldPrefix}[${i}]`,
+      description: `A schema variant was removed from "${fieldPrefix}" in ${method.toUpperCase()} ${path}`,
+    });
+  }
+  for (let i = b.length; i < t.length; i++) {
+    diffs.push({
+      type: 'SCHEMA_VARIANT_ADDED',
+      path,
+      method,
+      field: `${fieldPrefix}[${i}]`,
+      description: `A schema variant was added to "${fieldPrefix}" in ${method.toUpperCase()} ${path}`,
+    });
+  }
 }
 
 // ─── Constraints (min/max, length, pattern) ─────────────────────────────────

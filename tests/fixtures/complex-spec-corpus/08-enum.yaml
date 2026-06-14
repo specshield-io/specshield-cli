@@ -1,0 +1,21 @@
+openapi: 3.0.3
+info:
+  title: Enum Demo
+  version: 1.0.0
+# GET /accounts returns an object whose `status` is an enum. Removing an enum
+# value (e.g. dropping "closed") is breaking for consumers that handle it.
+paths:
+  /accounts:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [active, suspended, closed]

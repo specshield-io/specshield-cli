@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: OpenAPI 3.1 null-union type
+  version: 1.0.0
+# 3.1 uses JSON Schema: nullability is `type: [string, "null"]`, NOT `nullable: true`.
+# Marker fields the engine must capture in GET /user 200:  id, nickname
+# Extra check: is `nickname` correctly understood as nullable string?
+paths:
+  /user:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id:
+                    type: string
+                  nickname:
+                    type: [string, "null"]

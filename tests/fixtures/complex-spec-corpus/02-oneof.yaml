@@ -1,0 +1,32 @@
+openapi: 3.0.3
+info:
+  title: oneOf polymorphism
+  version: 1.0.0
+# Marker fields (one per variant) the engine must capture in GET /pet 200:
+#   bark (Dog), meow (Cat)
+paths:
+  /pet:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Dog'
+                  - $ref: '#/components/schemas/Cat'
+components:
+  schemas:
+    Dog:
+      type: object
+      required: [bark]
+      properties:
+        bark:
+          type: string
+    Cat:
+      type: object
+      required: [meow]
+      properties:
+        meow:
+          type: string
