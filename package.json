@@ -1,7 +1,7 @@
 {
   "name": "specshield",
-  "version": "3.2.8",
-  "description": "CLI for OpenAPI breaking change detection and bi-directional contract verification — with can-i-deploy gating, GitHub PR checks, and a first-run setup wizard.",
+  "version": "3.2.9",
+  "description": "Contract compatibility testing for APIs — catch breaking OpenAPI changes before they reach your consumers, with can-i-deploy deploy gating and GitHub PR checks. (a.k.a. bidirectional contract testing.)",
   "main": "src/cli.js",
   "bin": {
     "specshield": "./bin/specshield.js"

@@ -17,8 +17,8 @@
 **Commands — local & hosted compare**
 - [Local Compare](#local-compare) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
-**Bi-Directional Contract Testing (BDCT)**
-- [BDCT overview & full command reference](#bi-directional-contract-testing-bdct)
+**Contract Compatibility Testing — the `bdct` commands**
+- [Overview & full command reference](#bi-directional-contract-testing-bdct)
 - [`bdct capture from-har` — HAR → consumer contract](#bdct-capture-from-har--turn-real-traffic-into-a-consumer-contract)
   - [Step 1 — record a HAR](#step-1--record-a-har-file) · [Step 2 — generate contract](#step-2--turn-the-har-into-a-consumer-contract) · [Step 3 — publish + gate](#step-3--publish--gate) · [Operational concerns](#operational-concerns-read-this-before-going-live)
 - [`bdct verify-provider` — spec-vs-production conformance](#bdct-verify-provider--does-your-live-provider-actually-match-its-spec)
@@ -34,21 +34,23 @@
 
 ---
 
-> **OpenAPI Diff · Breaking-Change Detection · Bi-Directional Contract Testing · `can-i-deploy` Gate · Pact-File Ingest · Live-Traffic Capture · Spec-vs-Production Conformance · GitHub PR Checks**
+> **Contract Compatibility Testing · OpenAPI Diff · Breaking-Change Detection · `can-i-deploy` Deploy Gate · Pact-File Ingest · Live-Traffic Capture · Spec-vs-Production Conformance · GitHub PR Checks**
 
 ---
 
 ## Never ship a breaking change to your API consumers
 
-**SpecShield** is the one CLI that does four things to keep your API safe:
+**SpecShield is contract compatibility testing for APIs** — catch breaking changes before they reach your consumers, and gate every deploy with `can-i-deploy`. *(Contract compatibility testing is also known as bidirectional contract testing.)*
+
+It's the one CLI that does four things to keep your API safe:
 
 1. **Diff** two OpenAPI specs and fail CI on breaking changes.
-2. **Bi-directional contract testing** with `can-i-deploy` — block a deploy that would break a consumer.
+2. **Contract compatibility testing** with `can-i-deploy` — block a deploy that would break a consumer.
 3. **`bdct capture from-har`** — turn recorded traffic into an accurate consumer contract (no Pact DSL).
 4. **`bdct verify-provider`** — prove the running provider actually matches its OpenAPI spec.
 
 ```
-OpenAPI diff  +  BDCT  +  HAR → consumer contract  +  spec-vs-production conformance  —  in one CLI.
+OpenAPI diff  +  contract compatibility checks  +  HAR → consumer contract  +  spec-vs-production conformance  —  in one CLI.
 ```
 
 No broker. No Pact DSL. Language-agnostic. Works in 30 seconds. Local mode never uploads your specs.
