@@ -1,6 +1,6 @@
 {
   "name": "specshield",
-  "version": "3.2.9",
+  "version": "3.3.0",
   "description": "Contract compatibility testing for APIs — catch breaking OpenAPI changes before they reach your consumers, with can-i-deploy deploy gating and GitHub PR checks. (a.k.a. bidirectional contract testing.)",
   "main": "src/cli.js",
   "bin": {
@@ -44,6 +44,7 @@
     "github-app",
     "api-drift"
   ],
+  "author": "SpecShield Software Private Limited",
   "license": "MIT",
   "files": [
     "bin",

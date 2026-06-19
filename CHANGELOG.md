@@ -1,5 +1,48 @@
 # SpecShield CLI changelog
 
+## 3.3.0 — 2026-06-20 — Complex-spec hardening + "contract compatibility testing"
+
+A minor release focused on the local diff engine's accuracy on advanced OpenAPI
+constructs, plus naming and packaging updates. The `bdct` command names are
+unchanged — your existing CI keeps working.
+
+### Added
+
+- **Polymorphism & union support in `compare`.** `oneOf` / `anyOf` are no longer
+  flattened into a single object; each variant is captured and compared
+  independently. New change types surface in the diff:
+  - `SCHEMA_VARIANT_ADDED` (non-breaking) / `SCHEMA_VARIANT_REMOVED` (breaking)
+  - `SCHEMA_DISCRIMINATOR_CHANGED` (breaking — discriminator renamed/removed)
+  - field-level changes *inside* a matched variant are now detected.
+- **`additionalProperties` (free-form maps / dictionaries)** value schemas are
+  now captured and diffed — a field removed/changed inside map values is caught.
+- **OpenAPI 3.1 null-unions** (`type: [x, "null"]`) normalize to a base type +
+  `nullable`, so 3.1 specs compare cleanly against 3.0's `nullable: true` and
+  don't surface a bogus type-change.
+
+### Changed
+
+- **Naming:** SpecShield is now described as **contract compatibility testing**
+  (a.k.a. bidirectional contract testing) across the README and package metadata.
+  No command or flag changed.
+- `oneOf` / `anyOf` handling no longer over-marks fields as `required` (the old
+  merge concatenated every variant's `required`), removing a class of
+  false-positive breaking changes.
+- The local `compare` engine and the hosted BDCT `verify` engine are now aligned
+  on union / map / enum / 3.1 semantics — `compare` and `verify` give consistent
+  verdicts on the same spec.
+
+### Packaging / legal
+
+- `LICENSE` copyright and `package.json` author now attribute the project to
+  **SpecShield Software Private Limited**.
+- The `specshield-bdct-action` default `cli-version` now tracks **`~3.3.0`**
+  (the latest 3.3.x patch), so action users get 3.3 bug-fixes automatically.
+
+> Note: this entry documents everything since the last documented release (3.2.7),
+> including what shipped in the 3.2.8–3.2.9 patches. `enum` value-removal detection
+> (`ENUM_VALUE_REMOVED`, breaking) is part of this aligned engine work.
+
 ## 3.2.7 — 2026-06-12 — `history` + `share` now work from the CLI
 
 `specshield history` and `specshield share` were previously "UI-only" stubs —
@@ -31,6 +74,30 @@ saved comparison's id, so the full CLI/CI flow works end to end.
 
 - `specshield share` validates the report id is a positive number and gives a
   clear message (pointing at `specshield history`) instead of a server 400.
+
+## 3.2.4–3.2.6 — 2026-05-29 → 2026-06-03 — `whoami`, can-i-deploy fix, runnable examples
+
+A series of small patches, consolidated here (they predate the 3.2.7 history/share work).
+
+### Added
+
+- **`specshield whoami`** — prints the authenticated user, plan, and the org keys
+  you can pass to `--org`.
+- **`examples/playwright-har/`** — a runnable Playwright → HAR → `bdct capture`
+  starter you can clone and run in ~30 seconds against a public sandbox.
+
+### Fixed
+
+- **`can-i-deploy` / `verify` `v`-prefix round-trip.** Versions were displayed as
+  `v1.0.0`; pasting that back into `--version` queried `v1.0.0` and matched zero
+  records (the stored value is `1.0.0`), so the gate failed open. A leading `v`
+  before a digit is now stripped on input, and the display is idempotent.
+
+### Docs / CI
+
+- README: grouped table of contents and a flagship rewrite of the
+  `bdct capture from-har` section; added a weekly smoke workflow that runs the
+  example against the published CLI.
 
 ## 3.2.3 — 2026-05-28 — BDCT fidelity: HAR capture + provider conformance
 
