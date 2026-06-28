@@ -1379,7 +1379,7 @@ Per-subcommand flags:
 
 ## License
 
-MIT © Deepak Satyam
+MIT © SpecShield Software Private Limited
 
 ---
 
