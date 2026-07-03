@@ -2,7 +2,7 @@
 
 /**
  * Compare two normalized specs and return a flat list of raw diffs.
- * Each diff: { type, path, method, field, oldValue, newValue, description }
+ * Each diff: { type, changeId, path, method, field, oldValue, newValue, description }
  */
 function diffSpecs(base, target) {
   const diffs = [];
@@ -10,7 +10,28 @@ function diffSpecs(base, target) {
   diffEndpoints(base.endpoints || {}, target.endpoints || {}, diffs);
   diffSchemas(base.schemas || {}, target.schemas || {}, diffs);
 
+  // Stamp the canonical, public change ID on every diff so this engine and the
+  // backend emit the SAME id for the same change class. See the shared catalog:
+  // Docs/specshield-change-catalog.md (mirrors backend ChangeType.canonicalId).
+  for (const d of diffs) {
+    d.changeId = changeIdFor(d.type);
+  }
+
   return diffs;
+}
+
+// Only these CLI type names diverge from the canonical kebab; every other type
+// (field-became-required, parameter-became-optional, constraint-tightened,
+// schema-removed, request-type-changed, …) already kebab-cases to its canonical id.
+const CANONICAL_ID = {
+  RESPONSE_REMOVED: 'response-status-removed',
+  RESPONSE_ADDED: 'response-status-added',
+};
+
+/** Canonical public change ID. ENDPOINT_REMOVED -> "endpoint-removed". */
+function changeIdFor(type) {
+  if (!type) return null;
+  return CANONICAL_ID[type] || String(type).toLowerCase().replace(/_/g, '-');
 }
 
 // ─── Endpoints ──────────────────────────────────────────────────────────────
