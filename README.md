@@ -55,6 +55,8 @@ OpenAPI diff  +  contract compatibility checks  +  HAR → consumer contract  + 
 
 No broker. No Pact DSL. Language-agnostic. Works in 30 seconds. Local mode never uploads your specs.
 
+> 🤖 **Using an AI coding agent?** The [SpecShield MCP server](https://github.com/specshield26/specshield-mcp-server) brings the same `can-i-deploy` deploy gate into Claude, Cursor, and other MCP clients — ask *"is it safe to ship this API change to my consumers?"* right inside your agent. Same job, two entry points: this CLI for CI/CD, the MCP server for agents.
+
 ---
 
 ## The Problem
