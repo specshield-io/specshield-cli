@@ -1,7 +1,7 @@
 # SpecShield CLI
 
 [![npm](https://img.shields.io/npm/v/specshield)](https://www.npmjs.com/package/specshield)
-[![downloads](https://img.shields.io/npm/dw/specshield)](https://www.npmjs.com/package/specshield)
+[![downloads](https://img.shields.io/npm/dt/specshield)](https://www.npmjs.com/package/specshield)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 [![node](https://img.shields.io/badge/node-%3E%3D20-green)](https://nodejs.org)
 
