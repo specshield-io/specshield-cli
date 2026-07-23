@@ -162,7 +162,7 @@ function buildConfig(answers, detected) {
 // ─── Interactive flow ──────────────────────────────────────────────────────
 
 async function interactiveFlow(detected, opts) {
-  fmtSection('SpecShield CLI · setup wizard');
+  fmtSection('SpecShield™ CLI · setup wizard');
 
   if (detected.git.remote) ok(`Detected git repo: ${chalk.white(detected.git.remote)}`);
   if (detected.spec)       ok(`Found OpenAPI spec: ${chalk.white(detected.spec)}`);

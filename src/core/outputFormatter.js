@@ -15,7 +15,7 @@ function formatHuman(result) {
 
   // Summary header
   lines.push('');
-  lines.push(chalk.bold('  SpecShield Comparison Report'));
+  lines.push(chalk.bold('  SpecShield™ Comparison Report'));
   lines.push(chalk.gray('  ─────────────────────────────────────────'));
   lines.push(
     `  ${chalk.red.bold(`${breakingChanges.length} breaking`)}  ` +
