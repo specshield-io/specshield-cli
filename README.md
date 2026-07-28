@@ -17,6 +17,9 @@
 **Commands — local & hosted compare**
 - [Local Compare](#local-compare) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
+**Governance — lint & gate**
+- [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
+
 **Contract Compatibility Testing — the `bdct` commands**
 - [Overview & full command reference](#bi-directional-contract-testing-bdct)
 - [`bdct capture from-har` — HAR → consumer contract](#bdct-capture-from-har--turn-real-traffic-into-a-consumer-contract)
@@ -34,7 +37,7 @@
 
 ---
 
-> **Contract Compatibility Testing · OpenAPI Diff · Breaking-Change Detection · `can-i-deploy` Deploy Gate · Pact-File Ingest · Live-Traffic Capture · Spec-vs-Production Conformance · GitHub PR Checks**
+> **Contract Compatibility Testing · OpenAPI Diff · Breaking-Change Detection · `can-i-deploy` Deploy Gate · API Governance & Linting · Pact-File Ingest · Live-Traffic Capture · Spec-vs-Production Conformance · GitHub PR Checks**
 
 ---
 
@@ -42,15 +45,16 @@
 
 **SpecShield™ is contract compatibility testing for APIs** — catch breaking changes before they reach your consumers, and gate every deploy with `can-i-deploy`. *(Contract compatibility testing is also known as bidirectional contract testing.)*
 
-It's the one CLI that does four things to keep your API safe:
+It's the one CLI that does five things to keep your API safe:
 
 1. **Diff** two OpenAPI specs and fail CI on breaking changes.
 2. **Contract compatibility testing** with `can-i-deploy` — block a deploy that would break a consumer.
-3. **`bdct capture from-har`** — turn recorded traffic into an accurate consumer contract (no Pact DSL).
-4. **`bdct verify-provider`** — prove the running provider actually matches its OpenAPI spec.
+3. **`govern`** — lint your spec against OWASP + design rules and gate the PR on violations.
+4. **`bdct capture from-har`** — turn recorded traffic into an accurate consumer contract (no Pact DSL).
+5. **`bdct verify-provider`** — prove the running provider actually matches its OpenAPI spec.
 
 ```
-OpenAPI diff  +  contract compatibility checks  +  HAR → consumer contract  +  spec-vs-production conformance  —  in one CLI.
+OpenAPI diff  +  contract compatibility checks  +  API governance  +  HAR → consumer contract  +  spec-vs-production conformance  —  in one CLI.
 ```
 
 No broker. No Pact DSL. Language-agnostic. Works in 30 seconds. Local mode never uploads your specs.
@@ -210,7 +214,7 @@ specshield bdct can-i-deploy     --version $GITHUB_SHA
 - **CI/CD gating** — exit code `1` stops the pipeline automatically.
 - **Microservices contract safety** — consumers publish what they expect, providers verify they deliver it, no cross-team surprises.
 - **API drift tracking** — track how your specs change over time across the platform; know what changed, when, and by whom.
-- **API governance & linting** — score every spec against OWASP + design rules, adopt standard rule packs or bring your own ruleset, and gate PRs on violations. Available through the [IntelliJ plugin](https://plugins.jetbrains.com/plugin/33137-specshield), the [GitHub Action](https://github.com/marketplace/actions/specshield-bdct), the [MCP server](https://github.com/specshield26/specshield-mcp-server), and the [dashboard](https://specshield.io). *(Not a `specshield` CLI command yet.)*
+- **API governance & linting** — score every spec against OWASP + design rules, bring your own Spectral ruleset, and gate PRs on violations with [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr). The same engine also powers the [IntelliJ plugin](https://plugins.jetbrains.com/plugin/33137-specshield), the [GitHub Action](https://github.com/marketplace/actions/specshield-bdct), the [MCP server](https://github.com/specshield26/specshield-mcp-server), and the [dashboard](https://specshield.io).
 - **Provider conformance** — make sure your *running* service actually matches its published OpenAPI spec, not just on paper.
 - **Pact-free consumer contracts** — record real traffic with `capture from-har` and get an OpenAPI consumer contract without writing a single line of Pact DSL.
 
@@ -354,6 +358,68 @@ github:
   failOnBreaking: true
   commentOnPr: true
 ```
+
+---
+
+## Governance — lint a spec and gate the PR
+
+**Static API governance: score your OpenAPI spec against OWASP + design rules and fail CI on violations.** *(Team plan and above — runs on SpecShield's hosted engine, so it needs an API key.)*
+
+```bash
+# Lint against SpecShield's built-in governance rules
+specshield govern api/openapi.yaml
+
+# Lint against a Spectral-format ruleset (OWASP pack, your house style, …)
+specshield govern api/openapi.yaml --ruleset .specshield/ruleset.yaml
+
+# Gate CI: require a minimum score, and fail on warnings too
+specshield govern api/openapi.yaml --min-score 80 --fail-on-warning
+
+# Report only — print findings but never fail the build
+specshield govern api/openapi.yaml --advisory
+```
+
+Sample output:
+
+```
+  SpecShield™ Governance Report
+  ─────────────────────────────────────────
+  error    security-scheme-missing  $.paths./payments.post
+           operation has no security scheme
+           fix: add a security requirement
+  info     operation-operation-id   $.paths./health.get
+           operation is missing an operationId
+  ─────────────────────────────────────────
+  Score 74/100 · grade C  ·  1 error · 0 warning · 1 info
+
+  ✖ FAIL — governance policy not met:
+    • 1 error-severity finding
+```
+
+Exit codes: `0` = passed the gate · `1` = failed the gate · `2` = error (invalid spec, missing token, or paid-plan required).
+
+| Flag | Purpose | Default |
+|---|---|---|
+| `--ruleset <path>` | Lint against a Spectral-format ruleset file (uses the ruleset engine). | built-in rules |
+| `--min-score <n>` | Minimum compliance score (0–100) required to pass. | `70` |
+| `--fail-on-warning` | Fail the gate when any warning-severity finding is present. | off |
+| `--no-fail-on-error` | Do **not** fail the gate on error-severity findings. | fails on error |
+| `--org <key>` | Apply your org's active governance waivers to the verdict. | none |
+| `--advisory` | Report findings but always exit `0` (never fail CI). | off |
+| `--json` | Machine-readable JSON output (the full gate response). | off |
+| `--output <file>` | Also save the JSON result to a file. | — |
+| `--api-token <token>` | API token (else `SPECSHIELD_API_KEY` / stored config). | — |
+| `--server <url>` | Override the SpecShield server URL (self-hosted / staging). | `https://specshield.io` |
+
+Run it in CI right after your build:
+
+```yaml
+- name: Govern the API spec
+  env: { SPECSHIELD_API_KEY: ${{ secrets.SPECSHIELD_API_KEY }} }
+  run: specshield govern api/openapi.yaml --min-score 80
+```
+
+> The same governance engine powers the [IntelliJ plugin](https://plugins.jetbrains.com/plugin/33137-specshield), the [GitHub Action](https://github.com/marketplace/actions/specshield-bdct), the [MCP server](https://github.com/specshield26/specshield-mcp-server), and the [dashboard](https://specshield.io) — with catalog scorecards, waivers, and SARIF/JUnit/HTML reports.
 
 ---
 
@@ -1346,6 +1412,23 @@ specshield share <reportId | base.yaml target.yaml> [options]
 |---|---|
 | `--expires <days>` | Make the link expire after N days (default: never) |
 | `--api-key <key>` | Override stored API key |
+
+```bash
+specshield govern <spec> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--ruleset <path>` | Lint against a Spectral-format ruleset file |
+| `--min-score <n>` | Minimum compliance score (0–100) to pass (default 70) |
+| `--fail-on-warning` | Fail the gate on any warning-severity finding |
+| `--no-fail-on-error` | Do not fail the gate on error-severity findings |
+| `--org <key>` | Apply the org's active governance waivers |
+| `--advisory` | Report findings but always exit 0 |
+| `--json` | Machine-readable JSON output |
+| `--output <file>` | Save the JSON result to a file |
+| `--api-token <token>` | API token (overrides env / stored config) |
+| `--server <url>` | Override SpecShield server URL |
 
 ```bash
 specshield bdct <subcommand> [options]

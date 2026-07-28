@@ -1,5 +1,23 @@
 # SpecShield CLI changelog
 
+## 3.4.0 — 2026-07-29 — `govern` command (API governance in the CLI)
+
+### Added
+
+- **`specshield govern <spec>` — API governance & linting from the CLI.** Scores an
+  OpenAPI spec against SpecShield's governance rules (OWASP + design) via the hosted
+  gate (`POST /api/governance/gate`) and prints findings (grouped by severity, with
+  rule id + location), a compliance score + A–F grade, and a PASS/FAIL verdict.
+  Exit codes match the other gates: `0` pass · `1` fail · `2` error.
+  - Flags: `--ruleset <path>` (lint against a Spectral-format ruleset file),
+    `--min-score <n>`, `--fail-on-warning`, `--no-fail-on-error`, `--org <key>`
+    (apply the org's active waivers), `--advisory` (report but never fail CI),
+    `--json`, `--output <file>`, `--api-token`, `--server`.
+  - Team plan and above (needs an API key); free/unauthed callers get a friendly
+    "requires a paid plan" message and exit `2`.
+- README: new **Governance** section + command reference; the "API governance"
+  use case now points at `specshield govern` instead of "not a CLI command yet".
+
 ## 3.3.6 — 2026-07-28 — Docs & platform positioning
 
 Documentation-only release — **no CLI behavior change**; existing CI keeps working.

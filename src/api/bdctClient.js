@@ -108,6 +108,19 @@ async function listConsumerContracts(server, apiToken, { org, consumer, provider
   } catch (err) { throw apiError(err); }
 }
 
+/**
+ * Run the governance deploy gate on a spec. Always returns HTTP 200 with a
+ * pass/fail verdict in the body (a failed gate is a valid result, not an error),
+ * so only real failures (400 invalid spec, 402 paid-plan, 403 org, 503 disabled,
+ * network) throw. `payload` = { spec, ruleset?, policy?, orgKey? }.
+ */
+async function governanceGate(server, apiToken, payload) {
+  try {
+    const res = await buildClient(server, apiToken).post('/api/governance/gate', payload);
+    return res.data;
+  } catch (err) { throw apiError(err); }
+}
+
 module.exports = {
   publishProviderSpec,
   publishConsumerContract,
@@ -117,4 +130,5 @@ module.exports = {
   getMatrix,
   listProviderSpecs,
   listConsumerContracts,
+  governanceGate,
 };
