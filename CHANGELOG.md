@@ -1,5 +1,23 @@
 # SpecShield CLI changelog
 
+## 3.3.6 — 2026-07-28 — Docs & platform positioning
+
+Documentation-only release — **no CLI behavior change**; existing CI keeps working.
+
+### Changed
+
+- **README reframed around the SpecShield™ platform.** New "One platform, five ways
+  to run it" section covering the GitHub App, GitHub Action, this CLI, the
+  IntelliJ/JetBrains plugin, and the MCP server — plus the hosted dashboard.
+- **API governance surfaced as a first-class capability** (OWASP + design-rule
+  linting, standard rule packs, waivers, SARIF/JUnit/HTML reports) — available via
+  the IntelliJ plugin, GitHub Action, MCP server, and dashboard.
+- Corrected the "API governance" use case that previously described drift-tracking;
+  split into "API drift tracking" and proper "API governance & linting".
+- Noted that Optic was archived (Jan 2026) and linked the full comparison at
+  `specshield.io/alternatives`.
+- Applied the ™ mark to the SpecShield brand where appropriate.
+
 ## 3.3.0 — 2026-06-20 — Complex-spec hardening + "contract compatibility testing"
 
 A minor release focused on the local diff engine's accuracy on advanced OpenAPI

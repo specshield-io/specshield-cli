@@ -1,4 +1,4 @@
-# SpecShield CLI
+# SpecShield™ CLI
 
 [![npm](https://img.shields.io/npm/v/specshield)](https://www.npmjs.com/package/specshield)
 [![downloads](https://img.shields.io/npm/dt/specshield)](https://www.npmjs.com/package/specshield)
@@ -40,7 +40,7 @@
 
 ## Never ship a breaking change to your API consumers
 
-**SpecShield is contract compatibility testing for APIs** — catch breaking changes before they reach your consumers, and gate every deploy with `can-i-deploy`. *(Contract compatibility testing is also known as bidirectional contract testing.)*
+**SpecShield™ is contract compatibility testing for APIs** — catch breaking changes before they reach your consumers, and gate every deploy with `can-i-deploy`. *(Contract compatibility testing is also known as bidirectional contract testing.)*
 
 It's the one CLI that does four things to keep your API safe:
 
@@ -55,7 +55,25 @@ OpenAPI diff  +  contract compatibility checks  +  HAR → consumer contract  + 
 
 No broker. No Pact DSL. Language-agnostic. Works in 30 seconds. Local mode never uploads your specs.
 
-> 🤖 **Using an AI coding agent?** The [SpecShield MCP server](https://github.com/specshield26/specshield-mcp-server) brings the same `can-i-deploy` deploy gate into Claude, Cursor, and other MCP clients — ask *"is it safe to ship this API change to my consumers?"* right inside your agent. Same job, two entry points: this CLI for CI/CD, the MCP server for agents.
+---
+
+## One platform, five ways to run it
+
+This CLI is one surface of the **SpecShield™ platform**. The same contract-compatibility and governance engine powers every entry point — they share one project file (`.specshield.yml`), one API key, and one set of audit events. Adopt the one that fits your stack today and grow into the others:
+
+| Surface | Best for |
+|---|---|
+| **GitHub App** — [github.com/apps/specshield](https://github.com/apps/specshield) | Zero-config PR checks. Install once; every PR gets a check run and a diff comment. |
+| **GitHub Action** — [`specshield26/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct) | Pinned, reproducible BDCT + governance gate in any GitHub workflow. |
+| **CLI** *(this package)* | Any CI — GitLab, Jenkins, CircleCI, Bitbucket, Drone — or your laptop. |
+| **IntelliJ plugin** — [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/33137-specshield) | Inline spec findings, one-click auto-fixes, compare & explain — inside IntelliJ IDEA, WebStorm, PyCharm and more. |
+| **MCP server** — [`specshield-mcp-server`](https://github.com/specshield26/specshield-mcp-server) | Give Claude, Cursor, and other AI agents the same deploy gate. |
+
+Plus a hosted **dashboard** at [specshield.io](https://specshield.io) — compatibility matrix, consumer registry, append-only audit log, and **API governance** scorecards (OWASP + design-rule linting, standard rule packs, waivers, SARIF/JUnit/HTML reports).
+
+> 🤖 **AI agents:** the MCP server answers *"is it safe to ship this API change to my consumers?"* right inside your agent — analyze-only, it never touches your code. Same job, two entry points: this CLI for CI/CD, the MCP server for agents.
+
+> See how the platform stacks up against Pactflow, Pact, Optic, oasdiff, Bump.sh, Stoplight, and API gateways (Apigee, Azure API Management) at **[specshield.io/alternatives](https://specshield.io/alternatives)**.
 
 ---
 
@@ -191,9 +209,10 @@ specshield bdct can-i-deploy     --version $GITHUB_SHA
 - **Pull-request validation** — catch breaking changes before merge with `specshield compare`.
 - **CI/CD gating** — exit code `1` stops the pipeline automatically.
 - **Microservices contract safety** — consumers publish what they expect, providers verify they deliver it, no cross-team surprises.
-- **API governance** — track API drift over time across your platform; know what changed, when, by whom.
-- **Provider conformance** *(new)* — make sure your *running* service actually matches its published OpenAPI spec, not just on paper.
-- **Pact-free consumer contracts** *(new)* — record real traffic with `capture from-har` and get an OpenAPI consumer contract without writing a single line of Pact DSL.
+- **API drift tracking** — track how your specs change over time across the platform; know what changed, when, and by whom.
+- **API governance & linting** — score every spec against OWASP + design rules, adopt standard rule packs or bring your own ruleset, and gate PRs on violations. Available through the [IntelliJ plugin](https://plugins.jetbrains.com/plugin/33137-specshield), the [GitHub Action](https://github.com/marketplace/actions/specshield-bdct), the [MCP server](https://github.com/specshield26/specshield-mcp-server), and the [dashboard](https://specshield.io). *(Not a `specshield` CLI command yet.)*
+- **Provider conformance** — make sure your *running* service actually matches its published OpenAPI spec, not just on paper.
+- **Pact-free consumer contracts** — record real traffic with `capture from-har` and get an OpenAPI consumer contract without writing a single line of Pact DSL.
 
 ---
 
@@ -1093,6 +1112,8 @@ jobs:
 | CLI-first | ✅ | ❌ | ✅ | partial |
 | Free tier | ✅ | ❌ | ✅ (OSS) | ✅ (OSS) |
 
+> **Note:** Optic — a popular OpenAPI-diff tool — was **archived in January 2026** and is no longer maintained; SpecShield is a drop-in replacement for its diff and CI checks. For the full, up-to-date comparison (including Bump.sh, Stoplight, and API gateways like Apigee and Azure API Management), see **[specshield.io/alternatives](https://specshield.io/alternatives)**.
+
 ---
 
 ## Pricing
@@ -1395,7 +1416,9 @@ MIT © SpecShield Software Private Limited
 
 <div align="center">
 
-**[⭐ Star on GitHub](https://github.com/specshield26/specshield-cli) · [📦 View on npm](https://www.npmjs.com/package/specshield) · [🚀 Create free account](https://specshield.io)**
+**The SpecShield™ platform:** [Dashboard](https://specshield.io) · [GitHub App](https://github.com/apps/specshield) · [GitHub Action](https://github.com/marketplace/actions/specshield-bdct) · [IntelliJ Plugin](https://plugins.jetbrains.com/plugin/33137-specshield) · [MCP Server](https://github.com/specshield26/specshield-mcp-server)
+
+**[⭐ Star on GitHub](https://github.com/specshield26/specshield-cli) · [📦 View on npm](https://www.npmjs.com/package/specshield) · [🚀 Create free account](https://specshield.io) · [⚖️ Compare](https://specshield.io/alternatives)**
 
 *Stop finding out about API breakage from your users.*
 
