@@ -93,8 +93,29 @@ const REQUIRED_FIELDS = {
 };
 
 /**
+ * Option names that CAN be defaulted from `.specshield.yml`.
+ *
+ * Deliberately NOT every required field: `version`, `consumerVersion` and
+ * `providerVersion` are per-invocation values (a git SHA, a release tag) with no
+ * sensible project-wide default, so `bdctDefaultFor` has no case for them.
+ *
+ * This set exists so the "missing required options" error can tell the truth about
+ * where each field can be set. Pointing a user at `.specshield.yml` for a field the
+ * config can never supply sends them to edit a file, re-run, hit the identical error,
+ * and conclude the config file is broken.
+ *
+ * MUST stay in sync with the cases handled in {@link bdctDefaultFor} — the
+ * "config-backed fields" test asserts both directions.
+ */
+const CONFIG_BACKED_FIELDS = new Set([
+  'org', 'server', 'env',
+  'provider', 'consumer', 'service',
+  'spec', 'contract', 'format', 'branch',
+]);
+
+/**
  * Map a CLI option name to a path inside `.specshield.yml > bdct`.
- * Returns null when there is no defaulting rule for that option.
+ * Returns undefined when there is no defaulting rule for that option.
  */
 function bdctDefaultFor(bdct, name, command) {
   if (!bdct) return undefined;
@@ -181,14 +202,35 @@ function applyBdctDefaults(opts, command, { cwd = process.cwd() } = {}) {
   const missing  = required.filter(k => !opts[k]);
   if (missing.length > 0) {
     const flagFor = (k) => '--' + k.replace(/[A-Z]/g, m => '-' + m.toLowerCase());
+    const list = (ks) => ks.map(flagFor).join(', ');
+
+    // Split the advice: only fields the config can actually supply get pointed at
+    // `.specshield.yml`. The rest are flag-only and must say so, or the user edits
+    // the config, re-runs, and hits the same error with no idea why.
+    const configurable = missing.filter(k => CONFIG_BACKED_FIELDS.has(k));
+    const flagOnly     = missing.filter(k => !CONFIG_BACKED_FIELDS.has(k));
+
     const msg = [
       `Missing required ${missing.length === 1 ? 'option' : 'options'} for \`bdct ${command}\`: `
-        + missing.map(flagFor).join(', '),
+        + list(missing),
     ];
-    if (cfg._file) {
-      msg.push(`Set them as CLI flags or add them under \`bdct\` in ${cfg._file}.`);
-    } else {
-      msg.push('Pass them as CLI flags, or run `specshield init` to write a `.specshield.yml`.');
+
+    if (flagOnly.length > 0) {
+      msg.push(
+        `  ${list(flagOnly)} must be passed as CLI ${flagOnly.length === 1 ? 'flag' : 'flags'} — ` +
+        `${flagOnly.length === 1 ? 'it has' : 'they have'} no \`.specshield.yml\` equivalent ` +
+        '(version values change per run).');
+    }
+
+    if (configurable.length > 0) {
+      msg.push(cfg._file
+        ? `  ${list(configurable)} can be passed as CLI flags or set under \`bdct\` in ${cfg._file}.`
+        : `  ${list(configurable)} can be passed as CLI flags, or run \`specshield init\` to write a \`.specshield.yml\`.`);
+    }
+
+    if (command === 'verify' && flagOnly.length > 0) {
+      msg.push('  e.g. specshield bdct verify --consumer <NAME> --provider <NAME> '
+             + '--consumer-version <VER> --provider-version <VER>');
     }
     const err = new Error(msg.join('\n'));
     err.code = 'MISSING_REQUIRED_OPTIONS';
@@ -205,4 +247,6 @@ module.exports = {
   clearCache,
   applyBdctDefaults,
   REQUIRED_FIELDS,
+  CONFIG_BACKED_FIELDS,
+  bdctDefaultFor,
 };

@@ -18,13 +18,18 @@ const CLI = path.join(__dirname, '..', 'bin', 'specshield.js');
 // event loop, blocked while waiting for the subprocess). We use spawn +
 // Promise so the parent stays responsive while the child makes its HTTP
 // calls back to us.
+// Child processes must render WITHOUT colour: every assertion below matches plain
+// substrings of stdout. NO_COLOR alone is not enough — chalk gives FORCE_COLOR
+// precedence over NO_COLOR, and `...process.env` carries the parent's value into the
+// child, so a developer or CI with FORCE_COLOR set would get ANSI escapes in stdout
+// and these tests would fail with "expected" and "received" looking identical.
 function runCLI(args, env = {}) {
   return new Promise((resolve, reject) => {
     const child = cp.spawn('node', [CLI, ...args], {
       // HOME is isolated to a fresh tmp dir so no stale ~/.specshield/config.json
       // bleeds into the test (otherwise the "no token" assertion would find
       // the developer's real stored key).
-      env: { ...process.env, ...env, NO_COLOR: '1', HOME: env.HOME || isolatedHome },
+      env: { ...process.env, ...env, NO_COLOR: '1', FORCE_COLOR: '0', HOME: env.HOME || isolatedHome },
     });
     let stdout = '', stderr = '';
     child.stdout.on('data', (d) => { stdout += d.toString(); });

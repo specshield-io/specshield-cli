@@ -15,10 +15,15 @@ const os   = require('os');
 const CLI = path.join(__dirname, '..', 'bin', 'specshield.js');
 const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'history-home-'));
 
+// Child processes must render WITHOUT colour: every assertion below matches plain
+// substrings of stdout. NO_COLOR alone is not enough — chalk gives FORCE_COLOR
+// precedence over NO_COLOR, and `...process.env` carries the parent's value into the
+// child, so a developer or CI with FORCE_COLOR set would get ANSI escapes in stdout
+// and these tests would fail with "expected" and "received" looking identical.
 function runCLI(args, env = {}) {
   return new Promise((resolve, reject) => {
     const child = cp.spawn('node', [CLI, ...args], {
-      env: { ...process.env, ...env, NO_COLOR: '1', HOME: env.HOME || isolatedHome },
+      env: { ...process.env, ...env, NO_COLOR: '1', FORCE_COLOR: '0', HOME: env.HOME || isolatedHome },
     });
     let stdout = '', stderr = '';
     child.stdout.on('data', (d) => { stdout += d.toString(); });

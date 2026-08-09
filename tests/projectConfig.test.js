@@ -226,3 +226,108 @@ describe('applyBdctDefaults — placeholder check', () => {
       .not.toThrow();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Missing-required-options message
+//
+// Regression guard: the message used to say "Set them as CLI flags or add them
+// under `bdct` in <file>" for EVERY missing field, including --consumer-version
+// and --provider-version, which bdctDefaultFor has no case for. Users followed
+// that advice, edited .specshield.yml, re-ran, hit the identical error, and
+// concluded the config file was broken.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('missing required options message', () => {
+  const {
+    CONFIG_BACKED_FIELDS,
+    bdctDefaultFor,
+    REQUIRED_FIELDS,
+  } = require('../src/core/projectConfig');
+
+  const CONFIGURED = `
+bdct:
+  org: org_test
+  environment: production
+  consumer:
+    name: checkout-bff
+    provider: payment-service
+    contract: contracts/payment-service.yaml
+`;
+
+  function verifyErrorIn(root) {
+    try {
+      applyBdctDefaults({}, 'verify', { cwd: root });
+      throw new Error('expected applyBdctDefaults to throw');
+    } catch (err) {
+      expect(err.code).toBe('MISSING_REQUIRED_OPTIONS');
+      return err;
+    }
+  }
+
+  test('version fields are named as flag-only, not pointed at .specshield.yml', () => {
+    const root = makeTmp({ '.specshield.yml': CONFIGURED });
+    const err = verifyErrorIn(root);
+
+    expect(err.missing).toEqual(['consumerVersion', 'providerVersion']);
+
+    const flagOnlyLine = err.message
+      .split('\n')
+      .find(l => l.includes('must be passed as CLI flag'));
+
+    expect(flagOnlyLine).toBeDefined();
+    expect(flagOnlyLine).toContain('--consumer-version');
+    expect(flagOnlyLine).toContain('--provider-version');
+
+    // The whole point: no line that OFFERS the config file as a place to set a
+    // value may list the version flags. (The flag-only line above legitimately
+    // mentions `.specshield.yml` in order to say there is no equivalent.)
+    const configAdvice = err.message
+      .split('\n')
+      .filter(l => l.includes('can be passed as CLI flags'));
+    for (const line of configAdvice) {
+      expect(line).not.toContain('--consumer-version');
+      expect(line).not.toContain('--provider-version');
+    }
+  });
+
+  test('includes a copy-pasteable example for verify', () => {
+    const root = makeTmp({ '.specshield.yml': CONFIGURED });
+    const err = verifyErrorIn(root);
+    expect(err.message).toContain('specshield bdct verify --consumer');
+    expect(err.message).toContain('--provider-version <VER>');
+  });
+
+  test('config-backed fields ARE pointed at the config file', () => {
+    // No config file at all -> org is missing and IS config-backed.
+    const root = makeTmp({ 'placeholder.txt': 'x' });
+    const err = verifyErrorIn(root);
+
+    expect(err.missing).toContain('org');
+    // skip(1) — the first line is the summary, which lists every missing flag.
+    const line = err.message.split('\n').slice(1).find(l => l.includes('--org'));
+    expect(line).toBeDefined();
+    expect(line).toContain('can be passed as CLI flags');
+    expect(line).toContain('specshield init');
+  });
+
+  test('CONFIG_BACKED_FIELDS matches what bdctDefaultFor actually resolves', () => {
+    // Drift guard: a fully-populated config must yield a value for every field
+    // claimed to be config-backed, and nothing for the fields that are not.
+    const bdct = {
+      org: 'o', server: 's', environment: 'e',
+      provider: { name: 'p', spec: 'spec.yaml', branch: 'main' },
+      consumer: { name: 'c', provider: 'p', contract: 'c.yaml', format: 'OPENAPI' },
+    };
+
+    const allFields = [...new Set(Object.values(REQUIRED_FIELDS).flat()
+      .concat(['server', 'env', 'spec', 'contract', 'format', 'branch']))];
+
+    for (const field of allFields) {
+      const resolved = bdctDefaultFor(bdct, field, 'publish-provider');
+      if (CONFIG_BACKED_FIELDS.has(field)) {
+        expect(`${field}=${resolved}`).not.toMatch(/=undefined$/);
+      } else {
+        expect(`${field}=${resolved}`).toMatch(/=undefined$/);
+      }
+    }
+  });
+});
