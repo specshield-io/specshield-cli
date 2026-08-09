@@ -330,7 +330,15 @@ const verifyCommand = new Command('verify')
           const sev = (issue.severity || 'ERROR').toUpperCase();
           const marker = sev === 'WARNING' ? chalk.yellow('⚠') : chalk.red('●');
           const type = issue.type || issue.mismatchType || 'MISMATCH';
-          const loc  = issue.field || issue.path || issue.endpoint || '$';
+          // Show the endpoint AND the field. One field can be read from several
+          // endpoints, so field alone renders genuinely distinct findings as
+          // identical lines that look like a duplicate-output bug — e.g. a
+          // `receiptUrl` removal reported once for `POST /payments` and once for
+          // `GET /payments/{paymentId}` both printed as "at $.receiptUrl".
+          const field    = issue.field || issue.path || null;
+          const endpoint = issue.endpoint || null;
+          const loc = field && endpoint ? `${endpoint}  ${field}`
+                    : (field || endpoint || '$');
           process.stdout.write(`  ${marker} ${chalk.bold(type)} at ${chalk.gray(loc)}\n`);
           if (issue.consumerExpects && issue.providerProvides) {
             process.stdout.write(`    ${chalk.gray(`consumer: ${issue.consumerExpects}, provider: ${issue.providerProvides}`)}\n`);
