@@ -136,7 +136,7 @@ function writeProjectConfig(config, cwd = process.cwd()) {
 
 /**
  * Render a starter GitHub Actions workflow that uses
- * `specshield26/bdct-action@v1`. Optional output of the wizard.
+ * `specshield-io/bdct-action@v1`. Optional output of the wizard.
  *
  * Every input forwarded to the action MUST be present in the rendered YAML
  * — including org. A missing org renders `--org ""` on the CLI invocation
@@ -182,7 +182,7 @@ function renderWorkflow({
       '    runs-on: ubuntu-latest',
       '    steps:',
       '      - uses: actions/checkout@v4',
-      '      - uses: specshield26/bdct-action@v1',
+      '      - uses: specshield-io/bdct-action@v1',
       '        with:',
       '          command: publish-provider',
       orgLine,
@@ -196,7 +196,7 @@ function renderWorkflow({
       '    needs: publish-provider',
       '    runs-on: ubuntu-latest',
       '    steps:',
-      '      - uses: specshield26/bdct-action@v1',
+      '      - uses: specshield-io/bdct-action@v1',
       '        with:',
       '          command: can-i-deploy',
       orgLine,
@@ -214,7 +214,7 @@ function renderWorkflow({
       '    runs-on: ubuntu-latest',
       '    steps:',
       '      - uses: actions/checkout@v4',
-      '      - uses: specshield26/bdct-action@v1',
+      '      - uses: specshield-io/bdct-action@v1',
       '        with:',
       '          command: publish-consumer',
       orgLine,

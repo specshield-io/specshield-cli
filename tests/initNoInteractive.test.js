@@ -166,7 +166,7 @@ describe('specshield init --no-interactive', () => {
     const wf = path.join(root, '.github', 'workflows', 'specshield-bdct.yml');
     expect(fs.existsSync(wf)).toBe(true);
     const text = fs.readFileSync(wf, 'utf8');
-    expect(text).toMatch(/specshield26\/bdct-action@v1/);
+    expect(text).toMatch(/specshield-io\/bdct-action@v1/);
     expect(text).toMatch(/publish-provider:/);
   });
 });

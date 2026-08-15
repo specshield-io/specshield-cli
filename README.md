@@ -68,10 +68,10 @@ This CLI is one surface of the **SpecShield™ platform**. The same contract-com
 | Surface | Best for |
 |---|---|
 | **GitHub App** — [github.com/apps/specshield](https://github.com/apps/specshield) | Zero-config PR checks. Install once; every PR gets a check run and a diff comment. |
-| **GitHub Action** — [`specshield26/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct) | Pinned, reproducible BDCT + governance gate in any GitHub workflow. |
+| **GitHub Action** — [`specshield-io/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct) | Pinned, reproducible BDCT + governance gate in any GitHub workflow. |
 | **CLI** *(this package)* | Any CI — GitLab, Jenkins, CircleCI, Bitbucket, Drone — or your laptop. |
 | **IntelliJ plugin** — [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/33137-specshield) | Inline spec findings, one-click auto-fixes, compare & explain — inside IntelliJ IDEA, WebStorm, PyCharm and more. |
-| **MCP server** — [`specshield-mcp-server`](https://github.com/specshield26/specshield-mcp-server) | Give Claude, Cursor, and other AI agents the same deploy gate. |
+| **MCP server** — [`specshield-mcp-server`](https://github.com/specshield-io/specshield-mcp-server) | Give Claude, Cursor, and other AI agents the same deploy gate. |
 
 Plus a hosted **dashboard** at [specshield.io](https://specshield.io) — compatibility matrix, consumer registry, append-only audit log, and **API governance** scorecards (OWASP + design-rule linting, standard rule packs, waivers, SARIF/JUnit/HTML reports).
 
@@ -214,7 +214,7 @@ specshield bdct can-i-deploy     --version $GITHUB_SHA
 - **CI/CD gating** — exit code `1` stops the pipeline automatically.
 - **Microservices contract safety** — consumers publish what they expect, providers verify they deliver it, no cross-team surprises.
 - **API drift tracking** — track how your specs change over time across the platform; know what changed, when, and by whom.
-- **API governance & linting** — score every spec against OWASP + design rules, bring your own Spectral ruleset, and gate PRs on violations with [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr). The same engine also powers the [IntelliJ plugin](https://plugins.jetbrains.com/plugin/33137-specshield), the [GitHub Action](https://github.com/marketplace/actions/specshield-bdct), the [MCP server](https://github.com/specshield26/specshield-mcp-server), and the [dashboard](https://specshield.io).
+- **API governance & linting** — score every spec against OWASP + design rules, bring your own Spectral ruleset, and gate PRs on violations with [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr). The same engine also powers the [IntelliJ plugin](https://plugins.jetbrains.com/plugin/33137-specshield), the [GitHub Action](https://github.com/marketplace/actions/specshield-bdct), the [MCP server](https://github.com/specshield-io/specshield-mcp-server), and the [dashboard](https://specshield.io).
 - **Provider conformance** — make sure your *running* service actually matches its published OpenAPI spec, not just on paper.
 - **Pact-free consumer contracts** — record real traffic with `capture from-har` and get an OpenAPI consumer contract without writing a single line of Pact DSL.
 
@@ -419,7 +419,7 @@ Run it in CI right after your build:
   run: specshield govern api/openapi.yaml --min-score 80
 ```
 
-> The same governance engine powers the [IntelliJ plugin](https://plugins.jetbrains.com/plugin/33137-specshield), the [GitHub Action](https://github.com/marketplace/actions/specshield-bdct), the [MCP server](https://github.com/specshield26/specshield-mcp-server), and the [dashboard](https://specshield.io) — with catalog scorecards, waivers, and SARIF/JUnit/HTML reports.
+> The same governance engine powers the [IntelliJ plugin](https://plugins.jetbrains.com/plugin/33137-specshield), the [GitHub Action](https://github.com/marketplace/actions/specshield-bdct), the [MCP server](https://github.com/specshield-io/specshield-mcp-server), and the [dashboard](https://specshield.io) — with catalog scorecards, waivers, and SARIF/JUnit/HTML reports.
 
 ---
 
@@ -1204,7 +1204,7 @@ Run once at the root of your project. The wizard:
 4. Asks whether this project is a provider, a consumer, or both.
 5. Asks for your org key (autocompletes from your account if signed in).
 6. Validates / stores your API key.
-7. Writes **`.specshield.yml`** and (optionally) a starter **`.github/workflows/specshield-bdct.yml`** using [`specshield26/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct).
+7. Writes **`.specshield.yml`** and (optionally) a starter **`.github/workflows/specshield-bdct.yml`** using [`specshield-io/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct).
 
 ```bash
 specshield init
@@ -1492,16 +1492,16 @@ MIT © SpecShield Software Private Limited
 ## Support
 
 - 📧 [admin@specshield.io](mailto:admin@specshield.io)
-- 🐛 [Open an issue on GitHub](https://github.com/specshield26/specshield-cli/issues)
+- 🐛 [Open an issue on GitHub](https://github.com/specshield-io/specshield-cli/issues)
 - 🌐 [specshield.io](https://specshield.io)
 
 ---
 
 <div align="center">
 
-**The SpecShield™ platform:** [Dashboard](https://specshield.io) · [GitHub App](https://github.com/apps/specshield) · [GitHub Action](https://github.com/marketplace/actions/specshield-bdct) · [IntelliJ Plugin](https://plugins.jetbrains.com/plugin/33137-specshield) · [MCP Server](https://github.com/specshield26/specshield-mcp-server)
+**The SpecShield™ platform:** [Dashboard](https://specshield.io) · [GitHub App](https://github.com/apps/specshield) · [GitHub Action](https://github.com/marketplace/actions/specshield-bdct) · [IntelliJ Plugin](https://plugins.jetbrains.com/plugin/33137-specshield) · [MCP Server](https://github.com/specshield-io/specshield-mcp-server)
 
-**[⭐ Star on GitHub](https://github.com/specshield26/specshield-cli) · [📦 View on npm](https://www.npmjs.com/package/specshield) · [🚀 Create free account](https://specshield.io) · [⚖️ Compare](https://specshield.io/alternatives)**
+**[⭐ Star on GitHub](https://github.com/specshield-io/specshield-cli) · [📦 View on npm](https://www.npmjs.com/package/specshield) · [🚀 Create free account](https://specshield.io) · [⚖️ Compare](https://specshield.io/alternatives)**
 
 *Stop finding out about API breakage from your users.*
 

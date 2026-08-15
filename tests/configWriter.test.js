@@ -91,7 +91,7 @@ describe('renderWorkflow()', () => {
     expect(out).toMatch(/publish-provider:/);
     expect(out).toMatch(/provider: payment-service/);
     expect(out).not.toMatch(/publish-consumer:/);
-    expect(out).toMatch(/specshield26\/bdct-action@v1/);
+    expect(out).toMatch(/specshield-io\/bdct-action@v1/);
   });
 
   it('emits a publish-consumer job for kind=consumer', () => {
