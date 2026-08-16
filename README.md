@@ -67,7 +67,7 @@ This CLI is one surface of the **SpecShield™ platform**. The same contract-com
 
 | Surface | Best for |
 |---|---|
-| **GitHub App** — [github.com/apps/specshield-cli](https://github.com/apps/specshield-cli) | Zero-config PR checks. Install once; every PR gets a check run and a diff comment. |
+| **GitHub App** — [github.com/apps/specshield-deploy-gate](https://github.com/apps/specshield-deploy-gate) | Zero-config PR checks. Install once; every PR gets a check run and a diff comment. |
 | **GitHub Action** — [`specshield-io/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct) | Pinned, reproducible BDCT + governance gate in any GitHub workflow. |
 | **CLI** *(this package)* | Any CI — GitLab, Jenkins, CircleCI, Bitbucket, Drone — or your laptop. |
 | **IntelliJ plugin** — [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/33137-specshield) | Inline spec findings, one-click auto-fixes, compare & explain — inside IntelliJ IDEA, WebStorm, PyCharm and more. |
@@ -1499,7 +1499,7 @@ MIT © SpecShield Software Private Limited
 
 <div align="center">
 
-**The SpecShield™ platform:** [Dashboard](https://specshield.io) · [GitHub App](https://github.com/apps/specshield-cli) · [GitHub Action](https://github.com/marketplace/actions/specshield-bdct) · [IntelliJ Plugin](https://plugins.jetbrains.com/plugin/33137-specshield) · [MCP Server](https://github.com/specshield-io/specshield-mcp-server)
+**The SpecShield™ platform:** [Dashboard](https://specshield.io) · [GitHub App](https://github.com/apps/specshield-deploy-gate) · [GitHub Action](https://github.com/marketplace/actions/specshield-bdct) · [IntelliJ Plugin](https://plugins.jetbrains.com/plugin/33137-specshield) · [MCP Server](https://github.com/specshield-io/specshield-mcp-server)
 
 **[⭐ Star on GitHub](https://github.com/specshield-io/specshield-cli) · [📦 View on npm](https://www.npmjs.com/package/specshield) · [🚀 Create free account](https://specshield.io) · [⚖️ Compare](https://specshield.io/alternatives)**
 
