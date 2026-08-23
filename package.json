@@ -1,6 +1,6 @@
 {
   "name": "specshield",
-  "version": "3.4.6",
+  "version": "3.4.7",
   "description": "Contract compatibility testing for APIs — catch breaking OpenAPI changes before they reach your consumers, with can-i-deploy deploy gating and GitHub PR checks. (a.k.a. bidirectional contract testing.)",
   "main": "src/cli.js",
   "homepage": "https://specshield.io",
