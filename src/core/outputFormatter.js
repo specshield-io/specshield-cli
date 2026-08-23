@@ -64,6 +64,18 @@ function formatHuman(result) {
     for (const c of warnings) {
       lines.push(`  ${chalk.gray('!')} ${c.description}`);
     }
+    // Whether a constraint change actually breaks depends on which side of the
+    // contract it sits on, which this engine does not track. Say so rather than
+    // let the reader assume these were judged and found safe.
+    lines.push(chalk.gray('    These depend on request/response direction — the hosted gate rules on them.'));
+    lines.push('');
+  }
+
+  // "0 breaking" from a deliberately smaller local engine is not the same claim
+  // as "0 breaking" from the full one. Don't let the two look identical.
+  if (breakingChanges.length === 0) {
+    lines.push(chalk.gray('  No breaking changes found by the local engine.'));
+    lines.push(chalk.gray('  Nullability, constraint and enum-addition checks run on the hosted gate.'));
     lines.push('');
   }
 

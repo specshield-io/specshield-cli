@@ -475,7 +475,7 @@ describe('diffEngine - constraint changes', () => {
     expect(c.newValue).toBeNull();
   });
 
-  test('pattern change is treated as breaking (safety: we can\'t prove the new pattern is a superset)', () => {
+  test('pattern change is reported as a warning — direction decides severity, and this engine has no direction', () => {
     const base   = normalizeSpec({ paths: { '/x': { get: { parameters: [{
       name: 'code', in: 'query', schema: { type: 'string', pattern: '^[A-Z]{3}$' } }], responses: {} } } } });
     const target = normalizeSpec({ paths: { '/x': { get: { parameters: [{
@@ -483,12 +483,17 @@ describe('diffEngine - constraint changes', () => {
     const diffs = diffSpecs(base, target);
     const c = diffs.find(d => d.type === 'CONSTRAINT_PATTERN_CHANGED');
     expect(c).toBeDefined();
-    // Bucketed as breaking via classifyChanges.
+    // Detected, but NOT breaking. Whether a tightened pattern breaks anything
+    // depends on whether it sits on a request or a response, which this engine
+    // does not track. The hosted engine splits it into REQUEST_PATTERN_CHANGED
+    // (breaking) and RESPONSE_PATTERN_CHANGED (not), and is the authority.
+    // Failing the build here would mean the CLI red-lights what the gate passes.
     const classified = classifyChanges(diffs);
-    expect(classified.breakingChanges.some(b => b.type === 'CONSTRAINT_PATTERN_CHANGED')).toBe(true);
+    expect(classified.breakingChanges.some(b => b.type === 'CONSTRAINT_PATTERN_CHANGED')).toBe(false);
+    expect(classified.warnings.some(w => w.type === 'CONSTRAINT_PATTERN_CHANGED')).toBe(true);
   });
 
-  test('classifyChanges buckets CONSTRAINT_RELAXED as modification and CONSTRAINT_TIGHTENED as breaking', () => {
+  test('classifyChanges buckets CONSTRAINT_RELAXED as modification and CONSTRAINT_TIGHTENED as a warning, never breaking', () => {
     const diffs = [
       { type: 'CONSTRAINT_RELAXED',   path: '/x', method: 'get', field: 'parameters.limit',  oldValue: '100', newValue: '250', description: 'limit relaxed' },
       { type: 'CONSTRAINT_TIGHTENED', path: '/y', method: 'get', field: 'parameters.page',   oldValue: '1',   newValue: '5',   description: 'page tightened' },
@@ -496,8 +501,13 @@ describe('diffEngine - constraint changes', () => {
     const r = classifyChanges(diffs);
     expect(r.modifications).toHaveLength(1);
     expect(r.modifications[0].type).toBe('CONSTRAINT_RELAXED');
-    expect(r.breakingChanges).toHaveLength(1);
-    expect(r.breakingChanges[0].type).toBe('CONSTRAINT_TIGHTENED');
+    // Tightening is a warning, not a breaking change: this engine cannot tell a
+    // request constraint (breaking) from a response one (harmless). Reporting
+    // it without ruling on it keeps the CLI a strict subset of the hosted gate
+    // rather than a second opinion that contradicts it.
+    expect(r.breakingChanges).toHaveLength(0);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0].type).toBe('CONSTRAINT_TIGHTENED');
   });
 
   test('field-level constraint changes work too (not just parameters)', () => {

@@ -25,11 +25,6 @@ const BREAKING_TYPES = new Set([
   // that relied on the removed shape / the old discriminator.
   'SCHEMA_VARIANT_REMOVED',
   'SCHEMA_DISCRIMINATOR_CHANGED',
-  // Constraint tightening: previously-valid values become invalid → breaking.
-  'CONSTRAINT_TIGHTENED',
-  // Pattern changes are treated as breaking (semantic safety: we can't
-  // tell whether the new pattern accepts a superset of the old).
-  'CONSTRAINT_PATTERN_CHANGED',
 ]);
 
 const ADDITION_TYPES = new Set([
@@ -51,8 +46,29 @@ const MODIFICATION_TYPES = new Set([
   'CONSTRAINT_RELAXED',
 ]);
 
+/**
+ * Reported, but never fail the build (see resolveExitCode — only
+ * breakingChanges affect the exit code).
+ *
+ * Constraint changes live here because whether they break depends on WHICH SIDE
+ * of the contract they sit on, and this engine does not track that. Tightening
+ * `maxLength` on a *request* rejects payloads that used to be accepted; the same
+ * change on a *response* is harmless. The hosted engine makes that distinction
+ * (REQUEST_CONSTRAINT_TIGHTENED vs RESPONSE_CONSTRAINT_TIGHTENED) and is the
+ * authority on the verdict.
+ *
+ * Classifying them as breaking here — which this engine used to do — meant the
+ * CLI could fail a build that the hosted gate passes. Two gates that disagree
+ * is precisely the failure mode this product exists to prevent, so the CLI
+ * reports the change and declines to rule on it.
+ *
+ * The governing rule for this file: the CLI may detect FEWER change types than
+ * the backend, but it must never classify a shared type DIFFERENTLY.
+ * Subset, not variant. See engineParity.test.js.
+ */
 const WARNING_TYPES = new Set([
-  // future use
+  'CONSTRAINT_TIGHTENED',
+  'CONSTRAINT_PATTERN_CHANGED',
 ]);
 
 // Numeric order: higher = more severe
