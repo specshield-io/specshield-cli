@@ -12,6 +12,7 @@ const { classifyChanges, filterBySeverity } = require('../core/classifyChanges')
 const { formatHuman, formatJson } = require('../core/outputFormatter');
 const { loadConfig } = require('../core/configLoader');
 const { resolveExitCode } = require('../core/exitCode');
+const { resolveRemoteUrl } = require('../core/remoteUrl');
 const { recordCompareAndMaybeRender } = require('../core/conversionPrompt');
 const logger = require('../utils/logger');
 const exitAfterFlush = require('../utils/exitAfterFlush');
@@ -168,7 +169,7 @@ async function runRemoteComparison(base, target, options, spinner) {
   const baseRaw = await loadSpec(base);
   const targetRaw = await loadSpec(target);
 
-  const url = options.remoteUrl || HOSTED_API_URL + '/compare';
+  const url = resolveRemoteUrl(options.remoteUrl, HOSTED_API_URL);
   const timeout = parseInt(options.timeout, 10) || 10000;
 
   if (spinner) spinner.text = `Sending to hosted API...`;
@@ -186,13 +187,37 @@ async function runRemoteComparison(base, target, options, spinner) {
       { baseSpec: baseRaw, targetSpec: targetRaw },
       { timeout, headers }
     );
-    return response.data;
+    return normalizeRemoteResult(response.data, url);
   } catch (err) {
     const msg = err.response
       ? `Remote API error ${err.response.status}: ${JSON.stringify(err.response.data)}`
       : `Remote connection failed: ${err.message}`;
     throw new Error(msg);
   }
+}
+
+/**
+ * A remote response is untrusted input. Without this, a proxy error page or a
+ * redirect to the marketing site arrives as a 200 with an HTML body, and the
+ * first `.filter` downstream throws an unreadable TypeError at the user.
+ */
+function normalizeRemoteResult(data, url) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.breakingChanges)) {
+    const gotHtml = typeof data === 'string' && /<html|<!doctype/i.test(data);
+    throw new Error(
+      `Unexpected response from ${url}` +
+      (gotHtml
+        ? ' — that URL returned a web page, not the compare API. Pass the server base URL, e.g. --remote-url https://specshield.io'
+        : ' — the response was not a comparison result.')
+    );
+  }
+  // Downstream steps assume all four arrays exist.
+  return {
+    ...data,
+    additions: data.additions || [],
+    modifications: data.modifications || [],
+    warnings: data.warnings || [],
+  };
 }
 
 function applyIgnoreList(result, ignoreList) {
