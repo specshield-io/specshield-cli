@@ -5,6 +5,10 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 [![node](https://img.shields.io/badge/node-%3E%3D20-green)](https://nodejs.org)
 
+[![SpecShield in 60 seconds — watch on YouTube](https://img.youtube.com/vi/7Tp502KN5R8/maxresdefault.jpg)](https://www.youtube.com/watch?v=7Tp502KN5R8)
+
+▶️ **[Watch: SpecShield in 60 seconds](https://www.youtube.com/watch?v=7Tp502KN5R8)**
+
 ## Contents
 
 **Get started**
