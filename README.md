@@ -9,6 +9,29 @@
 
 ▶️ **[Watch: SpecShield in 60 seconds](https://www.youtube.com/watch?v=7Tp502KN5R8)**
 
+> **Contract Compatibility Testing · OpenAPI Diff · Breaking-Change Detection · `can-i-deploy` Deploy Gate · API Governance & Linting · Pact-File Ingest · Live-Traffic Capture · Spec-vs-Production Conformance · GitHub PR Checks**
+
+## Never ship a breaking change to your API consumers
+
+**SpecShield™ is contract compatibility testing for APIs** — catch breaking changes before they reach your consumers, and gate every deploy with `can-i-deploy`. *(Contract compatibility testing is also known as bidirectional contract testing.)*
+
+```bash
+npm install -g specshield
+specshield compare base.yaml target.yaml --fail-on-breaking
+```
+
+No account, no config, no broker to run or host. Language-agnostic. Local mode never uploads your specs.
+
+What the CLI does:
+
+1. **Diff** two OpenAPI specs and fail CI on breaking changes. *(Free)*
+2. **Contract compatibility testing** with `can-i-deploy` — block a deploy that would break a consumer. *(Team)*
+3. **`govern`** — lint your spec against OWASP + design rules and gate the PR on violations. *(Team)*
+4. **`bdct capture from-har`** — turn recorded traffic into an accurate consumer contract (no Pact DSL). *(Free)*
+5. **`bdct verify-provider`** — prove the running provider actually matches its OpenAPI spec. *(Free)*
+
+---
+
 ## Contents
 
 **Get started**
@@ -16,7 +39,7 @@
 
 **Why SpecShield**
 - [The Problem](#the-problem) · [The Solution](#the-solution) · [See It in Action](#see-it-in-action) · [Use Cases](#use-cases)
-- [Local vs Cloud](#local-vs-cloud) · [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
+- [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
 
 **Commands — local & hosted compare**
 - [Local Compare](#local-compare) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
@@ -25,7 +48,7 @@
 - [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
 
 **Contract Compatibility Testing — the `bdct` commands**
-- [Overview & full command reference](#bi-directional-contract-testing-bdct)
+- [Overview & full command reference](#contract-compatibility-testing--the-bdct-commands)
 - [`bdct capture from-har` — HAR → consumer contract](#bdct-capture-from-har--turn-real-traffic-into-a-consumer-contract)
   - [Step 1 — record a HAR](#step-1--record-a-har-file) · [Step 2 — generate contract](#step-2--turn-the-har-into-a-consumer-contract) · [Step 3 — publish + gate](#step-3--publish--gate) · [Operational concerns](#operational-concerns-read-this-before-going-live)
 - [`bdct verify-provider` — spec-vs-production conformance](#bdct-verify-provider--does-your-live-provider-actually-match-its-spec)
@@ -41,38 +64,14 @@
 
 ---
 
-> **Contract Compatibility Testing · OpenAPI Diff · Breaking-Change Detection · `can-i-deploy` Deploy Gate · API Governance & Linting · Pact-File Ingest · Live-Traffic Capture · Spec-vs-Production Conformance · GitHub PR Checks**
-
----
-
-## Never ship a breaking change to your API consumers
-
-**SpecShield™ is contract compatibility testing for APIs** — catch breaking changes before they reach your consumers, and gate every deploy with `can-i-deploy`. *(Contract compatibility testing is also known as bidirectional contract testing.)*
-
-It's the one CLI that does five things to keep your API safe:
-
-1. **Diff** two OpenAPI specs and fail CI on breaking changes.
-2. **Contract compatibility testing** with `can-i-deploy` — block a deploy that would break a consumer.
-3. **`govern`** — lint your spec against OWASP + design rules and gate the PR on violations.
-4. **`bdct capture from-har`** — turn recorded traffic into an accurate consumer contract (no Pact DSL).
-5. **`bdct verify-provider`** — prove the running provider actually matches its OpenAPI spec.
-
-```
-OpenAPI diff  +  contract compatibility checks  +  API governance  +  HAR → consumer contract  +  spec-vs-production conformance  —  in one CLI.
-```
-
-No broker. No Pact DSL. Language-agnostic. Works in 30 seconds. Local mode never uploads your specs.
-
----
-
-## One platform, five ways to run it
+## Where it runs
 
 This CLI is one surface of the **SpecShield™ platform**. The same contract-compatibility and governance engine powers every entry point — they share one project file (`.specshield.yml`), one API key, and one set of audit events. Adopt the one that fits your stack today and grow into the others:
 
 | Surface | Best for |
 |---|---|
 | **GitHub App** — [github.com/apps/specshield-deploy-gate](https://github.com/apps/specshield-deploy-gate) | Zero-config PR checks. Install once; every PR gets a check run and a diff comment. |
-| **GitHub Action** — [`specshield-io/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct) | Pinned, reproducible BDCT + governance gate in any GitHub workflow. |
+| **GitHub Action** — [`specshield-io/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct) | Pinned, reproducible contract-compatibility + governance gate in any GitHub workflow. |
 | **CLI** *(this package)* | Any CI — GitLab, Jenkins, CircleCI, Bitbucket, Drone — or your laptop. |
 | **IntelliJ plugin** — [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/33137-specshield) | Inline spec findings, one-click auto-fixes, compare & explain — inside IntelliJ IDEA, WebStorm, PyCharm and more. |
 | **MCP server** — [`specshield-mcp-server`](https://github.com/specshield-io/specshield-mcp-server) | Give Claude, Cursor, and other AI agents the same deploy gate. |
@@ -93,6 +92,8 @@ Plus a hosted **dashboard** at [specshield.io](https://specshield.io) — compat
 - An endpoint gets removed — the frontend breaks with no error in your logs.
 - A required field changes — partner integrations fail at 2am.
 - You find out from an angry customer, not from CI.
+
+It's rarely guarded against: in [our survey of public repos that publish OpenAPI specs](https://specshield.io/blog/95-percent-no-compatibility-gate), **95% had no breaking-change check in CI at all.**
 
 Manual review doesn't catch it. Integration tests run too late.
 **You need a contract between your services — and something that enforces it on every PR and every deploy.**
@@ -171,9 +172,9 @@ npm install -g specshield
 specshield compare base.yaml target.yaml --fail-on-breaking
 ```
 
-Works with any OpenAPI 3.x YAML or JSON.
+Works with OpenAPI 3.0 / 3.1 and Swagger 2.0, in YAML or JSON.
 
-**For BDCT**, run the wizard once and never re-type the same flags again:
+**For the `bdct` commands**, run the wizard once and never re-type the same flags again:
 
 ```bash
 specshield init
@@ -190,7 +191,9 @@ specshield bdct can-i-deploy     --version $GITHUB_SHA
 
 ---
 
-## A Real-World Story
+## Example: how it plays out
+
+*An illustrative scenario:*
 
 > The `payment-service` team merged a change that renamed `status` to
 > `paymentStatus`. The `checkout-ui` team wasn't notified.
@@ -224,30 +227,6 @@ specshield bdct can-i-deploy     --version $GITHUB_SHA
 
 ---
 
-## Local vs Cloud
-
-| Feature | Local (Free) | Team | Enterprise |
-|---|---|---|---|
-| Compare two spec files | ✅ | ✅ | ✅ |
-| Breaking change detection | ✅ | ✅ | ✅ |
-| JSON / human output | ✅ | ✅ | ✅ |
-| Fail CI on breaking change | ✅ | ✅ | ✅ |
-| **`bdct capture from-har`** | ✅ | ✅ | ✅ |
-| **`bdct verify-provider`** | ✅ | ✅ | ✅ |
-| `specshield history` — compare timeline | ❌ | ✅ | ✅ |
-| `specshield share` — public report URLs | ❌ | ✅ | ✅ |
-| Hosted dashboard | ❌ | ✅ | ✅ |
-| GitHub App PR checks | ❌ | ✅ | ✅ |
-| BDCT consumer registry + can-i-deploy gate | ❌ | ✅ | ✅ |
-| BDCT compatibility matrix | ❌ | ✅ | ✅ |
-| Team workspace + audit log + RBAC | ❌ | ✅ | ✅ |
-| Slack notifications | ❌ | ✅ | ✅ |
-| SAML SSO, SCIM, on-prem | ❌ | ❌ | ✅ |
-
-> **The local-only commands are first-class.** `compare`, `bdct capture from-har`, and `bdct verify-provider` all run entirely in your CI — your spec text never leaves your infrastructure.
-
----
-
 # Commands
 
 ## Local Compare
@@ -275,7 +254,8 @@ specshield compare base.yaml target.yaml --ignore "DELETE /admin removed" --fail
 
 Sends your specs to SpecShield's hosted diff engine. Useful for keeping the
 heavy comparison off your CI runner and for cross-validating against the
-exact engine the dashboard uses. Requires a free account.
+exact engine the dashboard uses. Requires an API key from a free account —
+without one the CLI exits with code `2` (`No API key found`).
 
 ```bash
 specshield compare base.yaml target.yaml --remote
@@ -283,10 +263,9 @@ specshield compare base.yaml target.yaml --remote --fail-on-breaking
 specshield compare base.yaml target.yaml --remote --json --output result.json
 ```
 
-> **History note:** with an API key set (run `specshield login`, or pass
-> `--api-key` / `SPECSHIELD_API_KEY`), `--remote` saves each comparison to
-> your history and the response includes a `historyId` you can hand to
-> `specshield share`. Without a key the diff still runs — it just isn't saved.
+> **History note:** set your key with `specshield login`, `--api-key`, or
+> `SPECSHIELD_API_KEY`. Each `--remote` comparison is saved to your history,
+> and the response includes a `historyId` you can hand to `specshield share`.
 
 ## Comparison History
 
@@ -427,13 +406,15 @@ Run it in CI right after your build:
 
 ---
 
-# Bi-Directional Contract Testing (BDCT)
+# Contract Compatibility Testing — the `bdct` commands
 
 **Compatibility without Pact's broker overhead or DSL.**
 
+> **Plan:** the registry commands — `publish-provider`, `publish-consumer`, `verify`, `can-i-deploy`, `matrix` and the `list*` commands — need a **Team** plan — on Free the server rejects them with a paid-plan error (exit code `2`). `capture from-har` and `verify-provider` are free and run fully locally. **[See plans →](https://specshield.io/pricing)**
+
 Both sides publish what they have — provider publishes its OpenAPI spec, consumer publishes either an OpenAPI subset *or* a Pact JSON file — and SpecShield's engine verifies that every endpoint/field the consumer relies on is satisfied by the provider. `can-i-deploy` then gates the deploy.
 
-### How BDCT Works
+### How it works
 
 1. Consumer publishes a contract (OpenAPI subset *or* Pact JSON).
 2. Provider publishes its full OpenAPI spec.
@@ -584,7 +565,7 @@ specshield bdct list-consumers --org acme-store --consumer checkout-ui
 specshield bdct list --org acme-store --provider payment-service --env production
 ```
 
-### Full BDCT Workflow
+### Full workflow
 
 ```bash
 # 1. Provider publishes spec on every release
@@ -604,9 +585,9 @@ specshield bdct can-i-deploy \
   --version v2.1.0 --env production
 ```
 
-### BDCT JSON Output
+### JSON output
 
-All BDCT commands support `--json` for CI parsing:
+All `bdct` commands support `--json` for CI parsing:
 
 ```bash
 specshield bdct can-i-deploy --org acme-store --service payment-service --version v2.1.0 --json
@@ -630,7 +611,7 @@ specshield bdct can-i-deploy --org acme-store --service payment-service --versio
 
 # `bdct capture from-har` — turn real traffic into a consumer contract
 
-**This is the feature that makes BDCT actually work for normal teams.**
+**This is the feature that makes contract testing actually work for normal teams.**
 Pact requires every consumer team to learn a DSL, instrument their tests,
 and run a broker. SpecShield asks for something they already have: a
 recording of an HTTP test run, in the universal HAR format that every
@@ -658,7 +639,7 @@ integration" and "we proved the integration."
 ```
 
 Step 1 already happens in your team — you're just saving the file. Step 2
-is one CLI command. Step 3 is the BDCT registry you publish to.
+is one CLI command. Step 3 is the contract registry you publish to.
 
 ---
 
@@ -676,118 +657,10 @@ project. You almost never have to write recorder code yourself.
 | **[Postman](https://learning.postman.com/docs/getting-started/importing-and-exporting/exporting-postman-data/#exporting-as-har)** / Insomnia / Bruno | Manually exercised during exploratory testing | Right-click → export |
 | **[k6](https://grafana.com/docs/k6/latest/results-output/real-time/json/#har)** load tests | Already running k6 against the provider | One `--out har=…` flag |
 
-**Recipes follow** — keep reading for the exact commands per tool, then jump
-to Step 2 (the capture command, which is identical regardless of recorder).
-
-### 1a. Chrome / Firefox / Edge DevTools (zero code — best for frontend)
-
-1. Open the page that calls your API in the browser.
-2. Open DevTools (`F12` / `Cmd+Opt+I`) → **Network** tab.
-3. Click the 🚫 button to clear, then reload the page and click through the
-   flows you want to record.
-4. Right-click anywhere in the request list → **Save all as HAR with
-   content** → save as `traffic.har`.
-
-That's the entire recording. The file is byte-compatible with everything
-SpecShield does.
-
-> **Safari note:** Safari's "Export HAR" is under the Develop menu →
-> *Export…* in the Network tab; it produces the same format.
-
-### 1b. Playwright (best for teams with UI tests)
-
-Add one option to your `playwright.config.js`:
-
-```js
-// playwright.config.js
-const path = require('path');
-module.exports = {
-  testDir: './tests',
-  use: {
-    baseURL: 'https://staging.acme.com',
-    recordHar: { path: path.resolve(__dirname, 'traffic.har'), mode: 'full', content: 'embed' },
-  },
-};
-```
-
-Run your tests as usual:
-
-```bash
-npx playwright test
-# → writes traffic.har on context close
-```
-
-The HAR will contain every HTTP call the browser made during the test —
-HTML, JS, images, and the API JSON. The `--onlyJson` default in Step 2
-filters out the noise automatically.
-
-> Need the HAR file flushed **per test**? Create the context explicitly in
-> your test and call `await context.close()` at the end. A runnable
-> copy-paste starter lives in [`examples/playwright-har/`](examples/playwright-har/)
-> of this repo — clone, `npm install`, `npx playwright install chromium`,
-> `npm test` produces `traffic.har` against the public JSONPlaceholder
-> sandbox so you can verify the toolchain works before pointing it at your
-> own provider.
-
-### 1c. Cypress
-
-```bash
-npm i -D @neuralegion/cypress-har-generator
-```
-
-```js
-// cypress.config.js
-const { install } = require('@neuralegion/cypress-har-generator');
-module.exports = { e2e: { setupNodeEvents(on, config) { install(on); return config; } } };
-
-// cypress/support/e2e.js
-beforeEach(() => cy.recordHar());
-afterEach(() => cy.saveHar({ outDir: './har-out' }));
-```
-
-Run `npx cypress run` and the HAR for each spec lands in `har-out/`.
-
-### 1d. mitmproxy (best for backend service-to-service)
-
-When the consumer is a backend service (no browser), point it through
-mitmproxy in your integration-test env. No consumer code change.
-
-```bash
-# Install once
-brew install mitmproxy            # macOS — also available via pip and apt
-
-# Start the proxy and tell it to dump HAR
-mitmdump --set hardump=traffic.har --listen-port 8080
-
-# In another terminal: run your tests with HTTPS_PROXY pointing at it
-HTTPS_PROXY=http://localhost:8080 HTTP_PROXY=http://localhost:8080 \
-  ./run-integration-tests.sh
-
-# Ctrl-C mitmdump when done — traffic.har is on disk
-```
-
-The `hardump` add-on is built into mitmproxy ≥ 9.0. For TLS hosts you'll
-need to trust mitmproxy's CA in your test JVM/runtime (see the
-[mitmproxy CA docs](https://docs.mitmproxy.org/stable/concepts-certificates/));
-in many test environments it's a single env var
-(`NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, or a
-JVM `cacerts` import).
-
-### 1e. Postman / Insomnia / Bruno
-
-Run the request (or a whole collection runner). Right-click the response
-→ **Save Response as HAR**. Repeat for each request you want included,
-then either keep them as separate `.har` files (pass `--in` once per file
-via a loop in CI) or merge them with any HAR-merge tool.
-
-### 1f. k6 load test (bonus — recording while load-testing)
-
-```bash
-k6 run --out har=traffic.har script.js
-```
-
-k6 emits a HAR alongside its load metrics. Same file works with
-`bdct capture from-har`.
+**Step-by-step recipes for each recorder** (DevTools, Playwright, Cypress,
+mitmproxy, Postman, k6) are in
+[`docs/har-recipes.md`](https://github.com/specshield-io/specshield-cli/blob/main/docs/har-recipes.md).
+The Step 2 command is identical whichever recorder you use.
 
 ---
 
@@ -869,7 +742,7 @@ specshield bdct can-i-deploy \
 # exit 0 = safe; exit 1 = a verification says NO and the deploy is blocked
 ```
 
-Full BDCT command reference is in the [Bi-Directional Contract Testing](#bi-directional-contract-testing-bdct)
+Full command reference is in the [Contract Compatibility Testing](#contract-compatibility-testing--the-bdct-commands)
 section above.
 
 ---
@@ -971,26 +844,11 @@ syntax changes.
 
 ---
 
-## Why this is the most valuable piece of the CLI
-
-Every other contract-testing product on the market asks the consumer team
-to **change their code** — adopt a DSL, instrument their tests, run a
-broker. That tax is why most teams that "should" be doing contract testing
-aren't.
-
-`bdct capture from-har` removes the tax. Your team's existing test run is
-already the contract; the CLI just converts the format. The HAR-capture →
-publish → can-i-deploy loop is what turns "we have OpenAPI specs in a
-folder" into "no provider PR merges if it would break a deployed consumer"
-— with measurable enforcement, in one CI step, and no per-language SDK.
-
----
-
 # `bdct verify-provider` — does your live provider actually match its spec?
 
 **Active spec-vs-production conformance — Dredd-style, in CI.**
 
-Most teams trust the provider's OpenAPI as the source of truth and never check whether the running service actually matches it. SpecShield's compatibility engine for BDCT is only as accurate as that trust — so `verify-provider` closes the loop by **firing probes derived from the spec at a running endpoint** (staging, usually) and validating every response body against the spec's schema for its status code.
+Most teams trust the provider's OpenAPI as the source of truth and never check whether the running service actually matches it. SpecShield's compatibility engine is only as accurate as that trust — so `verify-provider` closes the loop by **firing probes derived from the spec at a running endpoint** (staging, usually) and validating every response body against the spec's schema for its status code.
 
 Catches things like: the spec says `status ∈ {paid, pending, refunded}` but the live API sometimes returns `partially_refunded`. Or a field documented as `required` is sometimes missing. Or a `format: uuid` field actually contains a numeric ID.
 
@@ -1105,7 +963,7 @@ jobs:
 ### On Push — Publish provider spec + gate the deploy
 
 ```yaml
-name: BDCT Publish & Deploy Gate
+name: Publish Provider & Deploy Gate
 on:
   push:
     branches: [main]
@@ -1170,7 +1028,7 @@ jobs:
 | | **SpecShield** | **Pact / PactFlow** (SmartBear) | **oasdiff** | **Specmatic** / **Microcks** (OSS) |
 |---|---|---|---|---|
 | OpenAPI-native | ✅ | partial (Pact DSL) | ✅ | ✅ |
-| No broker required | ✅ | ❌ (Pact Broker) | ✅ | ✅ |
+| No broker to run or host | ✅ | ❌ (Pact Broker or paid PactFlow) | ✅ | ✅ |
 | Bi-directional contract testing | ✅ | ✅ (Pactflow paid) | ❌ | partial |
 | Breaking-change detection | ✅ | ❌ | ✅ | ❌ |
 | `can-i-deploy` gating | ✅ | ✅ (broker) | ❌ | ❌ |
@@ -1191,10 +1049,13 @@ jobs:
 | Plan | Price | What's included |
 |---|---|---|
 | **Free** | $0 forever | Local compare · `bdct capture from-har` · `bdct verify-provider` · public web diff · 7-day compare history · 1 GitHub App PR check |
-| **Team** | $89/mo ($75 annual) | Everything in Free + consumer registry · enforced `can-i-deploy` gate · audit trail · BDCT compatibility matrix · Slack alerts · team workspace + RBAC · priority email support |
-| **Enterprise** | Talk to us | Everything in Team + SAML SSO · SCIM · on-prem / private-cloud · advanced RBAC + audit-log export · dedicated onboarding + SLA |
+| **Team** | $89/mo, or $900/yr ($75/mo) · up to 10 users | Everything in Free + consumer registry · enforced `can-i-deploy` gate · compatibility matrix · `govern` governance gate · audit trail · Slack alerts · team workspace + RBAC · priority email support |
+| **Enterprise** | Custom · unlimited users | Everything in Team + SSO and on-prem / private-cloud (on request) · advanced RBAC + audit-log export · dedicated onboarding + SLA |
 
-No credit card for the free plan. **[Get started free →](https://specshield.io)** · For Enterprise: [sales@specshield.io](mailto:sales@specshield.io).
+Prices exclude VAT/GST, added at checkout where applicable. No credit card for the free plan.
+
+> **The local-only commands are first-class.** `compare`, `bdct capture from-har`, and `bdct verify-provider` run entirely in your CI on the Free plan — your spec text never leaves your infrastructure.
+ **[Get started free →](https://specshield.io)** · For Enterprise: [sales@specshield.io](mailto:sales@specshield.io).
 
 ---
 
@@ -1206,7 +1067,7 @@ Run once at the root of your project. The wizard:
 2. Detects your service name (`package.json`, `pyproject.toml`, `pom.xml`, `go.mod`, `Cargo.toml`, or directory name).
 3. Detects your git branch and suggests `production` for `main`/`master`, `staging` otherwise.
 4. Asks whether this project is a provider, a consumer, or both.
-5. Asks for your org key (autocompletes from your account if signed in).
+5. Asks for your org key — copy it from the dashboard at [specshield.io/account/team](https://specshield.io/account/team).
 6. Validates / stores your API key.
 7. Writes **`.specshield.yml`** and (optionally) a starter **`.github/workflows/specshield-bdct.yml`** using [`specshield-io/bdct-action@v1`](https://github.com/marketplace/actions/specshield-bdct).
 
@@ -1278,7 +1139,7 @@ specshield init --no-interactive \
 | `--consumer-provider <name>` | The provider this consumer talks to. |
 | `--contract <path>` | Path to the consumer contract (OpenAPI or Pact JSON). |
 | `--format <fmt>` | Consumer contract format: `OPENAPI` (default) or `PACT`. |
-| `--env <environment>` | Default environment for BDCT operations. |
+| `--env <environment>` | Default environment for `bdct` operations. |
 | `--write-workflow` | Also write a starter GitHub Actions workflow. |
 
 > **What is _not_ written into `.specshield.yml`:** your API key. It's stored in `~/.specshield/config.json` (set by `specshield login`) or read from `SPECSHIELD_API_KEY` in CI. The project file is committed; never commit a secret into it.
@@ -1346,7 +1207,7 @@ remote:
   url: https://specshield.io/compare
   timeout: 10000
 
-# BDCT defaults (used by every `specshield bdct …` subcommand).
+# `bdct` defaults (used by every `specshield bdct …` subcommand).
 bdct:
   org: acme-pay
   environment: staging
@@ -1370,7 +1231,7 @@ github:
   commentOnPr: true
 ```
 
-With this file, BDCT commands collapse to `--version`:
+With this file, `bdct` commands collapse to `--version`:
 
 ```bash
 specshield bdct publish-provider --version $GITHUB_SHA
@@ -1394,9 +1255,10 @@ specshield compare <base> <target> [options]
 | `--json` | Machine-readable JSON output |
 | `--output <file>` | Save result to file |
 | `--ignore <change>` | Ignore a specific change (repeatable) |
-| `--severity <level>` | `info` / `warning` / `error` |
+| `--severity <level>` | Minimum severity shown: `info` / `warning` / `error` (default `info`) |
 | `--config <path>` | Path to `.specshield.yml` |
-| `--timeout <ms>` | Request timeout for remote mode |
+| `--remote-url <url>` | Override the hosted API base URL |
+| `--timeout <ms>` | Request timeout for remote mode (default `10000`) |
 
 ```bash
 specshield history [options]
@@ -1416,6 +1278,17 @@ specshield share <reportId | base.yaml target.yaml> [options]
 |---|---|
 | `--expires <days>` | Make the link expire after N days (default: never) |
 | `--api-key <key>` | Override stored API key |
+
+```bash
+specshield whoami [options]      # show the signed-in account
+specshield logout                # remove the stored API key
+```
+
+| Option (`whoami`) | Description |
+|---|---|
+| `--api-token <key>` | Override stored / env API token for this call |
+| `--server <url>` | Override SpecShield server URL |
+| `--json` | Machine-readable JSON output |
 
 ```bash
 specshield govern <spec> [options]
