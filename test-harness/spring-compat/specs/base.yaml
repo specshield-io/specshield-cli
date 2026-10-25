@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info: { title: Payments API, version: "1.0.0" }
+paths:
+  /payments:
+    get:
+      parameters:
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: legacy, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Payment' }
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewPayment' }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+  /payments/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+        '404': { description: not found }
+  /payments/{id}/receipt:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: ok, content: { application/pdf: { schema: { type: string, format: binary } } } }
+components:
+  schemas:
+    Payment:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string }
+        status: { $ref: '#/components/schemas/Status' }
+        amount: { type: integer }
+        note: { type: string }
+    Status:
+      type: string
+      enum: [PENDING, ENABLED, FAILED]
+    NewPayment:
+      type: object
+      required: [amount]
+      properties:
+        amount: { type: integer }
+        status: { $ref: '#/components/schemas/Status' }

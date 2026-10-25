@@ -241,4 +241,4 @@ function filterBySeverity(result, minSeverity) {
   };
 }
 
-module.exports = { classifyChanges, filterBySeverity };
+module.exports = { classifyChanges, filterBySeverity, BREAKING_TYPES };

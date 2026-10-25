@@ -1,6 +1,6 @@
 {
   "name": "specshield",
-  "version": "3.4.15",
+  "version": "3.4.16",
   "description": "Contract compatibility testing for APIs — catch breaking OpenAPI changes before they reach your consumers, with can-i-deploy deploy gating and GitHub PR checks. (a.k.a. bidirectional contract testing.)",
   "main": "src/cli.js",
   "homepage": "https://specshield.io",
@@ -72,7 +72,8 @@
     "fs-extra": "^11.2.0",
     "js-yaml": "^4.1.0",
     "ora": "^5.4.1",
-    "prompts": "^2.4.2"
+    "prompts": "^2.4.2",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "jest": "^29.7.0"

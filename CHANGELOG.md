@@ -1,5 +1,34 @@
 # SpecShield CLI changelog
 
+## Unreleased — break → fix: `specshield fix`
+
+### Added
+
+- **`specshield fix <base> <target>`** writes the non-breaking version of a breaking
+  change as minimal edits to the target spec (comments and layout kept): renamed fields
+  keep both names, removed things come back `deprecated` (`--sunset`), newly required
+  input becomes optional, type changes keep the old type, removed enum values return.
+  Every fix is verified by re-running the diff engine; one that leaves its break or adds
+  another is not applied. `--out`, `--write`, `--dry-run`, `--json`.
+- **`--spring <dir> --package <pkg>`** generates a Spring Boot 3 version layer
+  (`ResponseBodyAdvice`/`RequestBodyAdvice`): old clients get the old JSON shape (renames,
+  scalar conversions, enum mappings, request defaults, list envelopes), each rewrite
+  checked on sample payloads against the old schema first. Compiled and tested in a Spring
+  Boot 3.2 and 3.5 app (`test-harness/spring-compat/verify.sh`).
+- `compare` points at `specshield fix` when it finds breaking changes.
+- `specshield deprecations` also honours `x-deprecated: true` (Swagger 2.0 schemas).
+
+### Tested on real data
+
+- Kubernetes `swagger.json` v1.37.1 → master: 552 breaking changes, all fixed and verified
+  (7 s); an independent `compare` of v1.37.1 against the fixed spec reports 0.
+- GitHub's REST API description, April → October 2026 (13 MB): 429 breaking changes, all
+  fixed and verified (22 s), independently re-checked. This run removed two kinds of
+  guesses: "renames" between unrelated fields that happened to be the only ones of a type
+  (`budget_type` → `expires_at`; now a rename needs a shared word), and enum "renames"
+  between single-value constants of `oneOf` variants that moved. A format-only change
+  (`integer` → `int64`) no longer suggests a new field.
+
 ## Unreleased — safe removal: deprecate → watch traffic drain → remove
 
 ### Added

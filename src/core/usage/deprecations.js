@@ -374,7 +374,7 @@ function deprecationFor(change, byKey) {
 // ─── spec helpers ───────────────────────────────────────────────────────────
 
 function isDeprecated(node) {
-  return Boolean(node && typeof node === 'object' && (node.deprecated === true || node['x-sunset']));
+  return Boolean(node && typeof node === 'object' && (node.deprecated === true || node['x-deprecated'] === true || node['x-sunset']));
 }
 
 /** `x-sunset: 2026-12-31` — YAML parses an unquoted date to a Date. */

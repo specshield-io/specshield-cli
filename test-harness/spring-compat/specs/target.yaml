@@ -1,0 +1,59 @@
+openapi: 3.0.3
+info: { title: Payments API, version: "2.0.0" }
+paths:
+  /payments:
+    get:
+      # limit is now mandatory to protect the DB
+      parameters:
+        - { name: limit, in: query, required: true, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payment' }
+                  next: { type: string }
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewPayment' }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+  /payments/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+components:
+  schemas:
+    Payment:
+      type: object
+      required: [id, paymentStatus]
+      properties:
+        id: { type: string }
+        paymentStatus: { $ref: '#/components/schemas/Status' }   # renamed from status
+        amount: { type: string }
+    Status:
+      type: string
+      enum: [PENDING, ACTIVE, FAILED]
+    NewPayment:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: integer }
+        paymentStatus: { $ref: '#/components/schemas/Status' }
+        currency: { type: string, default: EUR }

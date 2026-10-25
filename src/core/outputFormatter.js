@@ -40,6 +40,7 @@ function formatHuman(result) {
       if (c.impact) lines.push(...formatImpact(c, { detailed: true }));
       if (c.deprecation) lines.push(formatDeprecation(c));
     }
+    lines.push(chalk.gray('  Get a non-breaking version of this change: specshield fix <base> <target>'));
     lines.push('');
   }
 

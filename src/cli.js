@@ -13,6 +13,7 @@ const shareCommand = require('./commands/share');
 const whoamiCommand = require('./commands/whoami');
 const usageCommand = require('./commands/usage');
 const deprecationsCommand = require('./commands/deprecations');
+const fixCommand = require('./commands/fix');
 
 const program = new Command();
 
@@ -36,6 +37,7 @@ program.addCommand(shareCommand);
 program.addCommand(whoamiCommand);
 program.addCommand(usageCommand);
 program.addCommand(deprecationsCommand);
+program.addCommand(fixCommand);
 
 program.parseAsync(process.argv).catch((err) => {
   const logger = require('./utils/logger');

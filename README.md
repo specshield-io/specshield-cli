@@ -42,7 +42,7 @@ What the CLI does:
 - [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
 
 **Commands — local & hosted compare**
-- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
+- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
 **Governance — lint & gate**
 - [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
@@ -433,6 +433,88 @@ and emails whoever uploaded. Only the report is sent — counts per client, neve
 # e.g. weekly in CI, after importing the week's logs
 specshield deprecations api/openapi.yaml --usage usage.json --upload --org acme --api payments
 ```
+
+## Break → fix: generate the non-breaking version
+
+A blocked PR with no way forward is why teams switch gates off. `specshield fix` takes
+the change that broke the gate and writes the **non-breaking version** of it — the
+expand-and-contract edit you'd make by hand if you had the time.
+
+```bash
+specshield fix api/openapi.base.yaml api/openapi.yaml
+```
+
+```text
+  SpecShield™ Fix — Payments API 1.0.0 → 2.0.0
+  16 breaking changes · 14 fixed · 2 need a decision
+  Each fix was re-checked with the diff engine: it removes its breaking change and adds none.
+
+  ✔ `status` was renamed to `paymentStatus`: return both, `status` deprecated
+      POST /payments, GET /payments/{id}
+      → The server must return `status` with the same value as `paymentStatus`.
+  ✔ Make `currency` optional (default "EUR")
+      → Clients that don't send it get the default "EUR".
+  ✔ Keep `amount` as integer; return the string value as `amountV2`
+  ✔ Keep "ENABLED" as an allowed value of status (renamed to "ACTIVE")
+  ✔ Keep GET /payments/{id}/receipt, marked deprecated
+  …
+  ✖ NEEDS A DECISION (2)
+  ● Type of "responses.200" changed from "array" to "object" in GET /payments
+      the list moved into `data` — one schema can't describe both shapes, so this needs a version layer (--spring)
+
+  ✔ Wrote openapi.fixed.yaml (12 edits, comments and layout kept)
+```
+
+| The change | The fix |
+|---|---|
+| Field or parameter renamed | keep both names, the old one `deprecated` (a rename needs the same type **and** a shared word in the name) |
+| Field, parameter, operation, response or schema removed | restore it, `deprecated` (`--sunset 2027-03-31` adds `x-sunset`) — then `specshield deprecations` tracks it draining |
+| Request field or parameter became required | optional again; the report says the server must default it |
+| Field type changed | request: keep the old type · response: keep the old type, new type as `<field>V2` |
+| Format only (`integer` → `int64`) | keep the old format |
+| Enum value removed | keep it (a value renamed while others stay is recognised) |
+| Body changed shape (list → `{ data: [...] }`) | no spec can say both → `--spring` |
+
+- **Nothing unverified is written.** Every fix is applied and the diff engine re-run; a fix
+  that leaves its breaking change or adds another is dropped and listed with the reason.
+  Fixes that depend on each other (restoring a field brings back an enum value it needs)
+  are applied in rounds, and the result may not contain any break the target didn't have.
+- The fix is written to `<target>.fixed.yaml` (or `--out`, or `--write` in place) as
+  minimal edits: comments, ordering and quoting of every untouched line are kept, so
+  `git diff` shows only the fix. `--dry-run` writes nothing; `--json` for scripts.
+- Exit code `0` when everything was fixed, `1` when something still needs a decision.
+- Each fix tells you what the **server** must do for the spec to be true — return the old
+  field too, accept the old value, default a missing one.
+
+### Spring Boot: old clients keep the old shape
+
+Some changes can't be undone in the spec — a list wrapped in an envelope, a field that now
+holds a string. `--spring` generates a Stripe-style **version layer** for a Spring Boot 3
+service instead: the controllers speak only the new API; clients that don't send
+`X-API-Version: 2.0.0` get the old JSON, and their old requests are upgraded on the way in.
+
+```bash
+specshield fix base.yaml target.yaml --spring src/main/java --package com.acme.payments.compat
+```
+
+- Generated: `ApiVersion_2_0_0.java` (this change's rewrites, as data) plus a small fixed
+  runtime — a `ResponseBodyAdvice` and a `RequestBodyAdvice` on Jackson. No changes to
+  your controllers.
+- Rewrites: rename a field, convert a scalar's type (`"1250"` ↔ `1250`, only when the value
+  converts exactly), map an enum value, default a missing request field, unwrap a list from
+  its envelope — at any depth, inside arrays and maps.
+- **Checked before it is generated**: for every operation, a sample payload of the new
+  shape is rewritten and validated against the *old* schema (and old requests against the
+  new one). A rewrite that can't produce the old shape is not generated — e.g. a required
+  field the new code no longer returns at all — and the report says why.
+- Renames and enum mappings are inferred from the diff; they're marked
+  `/* inferred rename — check */` in the generated code.
+- Clients with no version header are treated as on the old version, so existing
+  integrations keep working without a change. Set the header name with
+  `--version-header` or `specshield.compat.header`; a later `fix` run adds another
+  `ApiVersion_<v>` class and the layer chains them.
+- Tested by compiling the generated code into a Spring Boot app and calling it as an old
+  and a new client (`test-harness/spring-compat/verify.sh`), on Spring Boot 3.2 and 3.5.
 
 ## Remote Compare
 
