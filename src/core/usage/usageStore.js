@@ -9,7 +9,8 @@ const { clientIdOf } = require('./clientIdentity');
  * Aggregates request records into the usage summary written to usage.json.
  *
  * Only aggregates are kept: per (method, path template, client) a call count,
- * first/last seen, and how often each query-parameter NAME was sent. Concrete
+ * first/last seen, calls per week, and how often (and how recently) each
+ * query-parameter NAME was sent. Concrete
  * paths (which carry IDs), query values, IPs and bodies are never stored — the
  * file is safe to commit or upload.
  */
@@ -19,6 +20,7 @@ const VERSION = 1;
 const MAX_ENDPOINTS = 5000;
 const MAX_UNMATCHED = 500;
 const MAX_PARAMS = 50;
+const MAX_WEEKS = 26;
 
 class UsageAggregator {
   /**
@@ -87,7 +89,7 @@ class UsageAggregator {
     const clientId = clientIdOf(record, this.clientSpec);
     let c = ep.clients.get(clientId);
     if (!c) {
-      c = { calls: 0, firstSeen: null, lastSeen: null, params: new Map(), paramsTruncated: false };
+      c = newClient();
       ep.clients.set(clientId, c);
     }
     c.calls++;
@@ -96,11 +98,14 @@ class UsageAggregator {
       if (c.lastSeen === null || record.time > c.lastSeen) c.lastSeen = record.time;
       if (this.from === null || record.time < this.from) this.from = record.time;
       if (this.to === null || record.time > this.to) this.to = record.time;
+      const week = weekOf(record.time);
+      c.weeks.set(week, (c.weeks.get(week) || 0) + 1);
     }
     for (const name of queryParamNames(record.query)) {
       if (c.params.has(name)) c.params.set(name, c.params.get(name) + 1);
       else if (c.params.size < MAX_PARAMS) c.params.set(name, 1);
-      else c.paramsTruncated = true;
+      else { c.paramsTruncated = true; continue; }
+      if (record.time !== null) c.paramsLastSeen.set(name, maxTime(c.paramsLastSeen.get(name) ?? null, record.time));
     }
 
     this.stats.requests++;
@@ -121,7 +126,7 @@ class UsageAggregator {
       for (const ec of e.clients) {
         let c = ep.clients.get(ec.id);
         if (!c) {
-          c = { calls: 0, firstSeen: null, lastSeen: null, params: new Map(), paramsTruncated: false };
+          c = newClient();
           ep.clients.set(ec.id, c);
         }
         c.calls += ec.calls;
@@ -132,6 +137,10 @@ class UsageAggregator {
           else if (c.params.size < MAX_PARAMS) c.params.set(name, n);
           else c.paramsTruncated = true;
         }
+        for (const [name, t] of Object.entries(ec.paramsLastSeen || {})) {
+          if (c.params.has(name)) c.paramsLastSeen.set(name, maxTime(c.paramsLastSeen.get(name) ?? null, toMs(t)));
+        }
+        for (const [week, n] of Object.entries(ec.weeks || {})) c.weeks.set(week, (c.weeks.get(week) || 0) + n);
         if (ec.paramsTruncated) c.paramsTruncated = true;
       }
     }
@@ -146,7 +155,11 @@ class UsageAggregator {
         .map(([id, c]) => {
           const out = { id, calls: c.calls, firstSeen: toIso(c.firstSeen), lastSeen: toIso(c.lastSeen) };
           if (c.params.size > 0) out.params = Object.fromEntries([...c.params.entries()].sort((a, b) => b[1] - a[1]));
+          if (c.paramsLastSeen.size > 0) {
+            out.paramsLastSeen = Object.fromEntries([...c.paramsLastSeen.entries()].map(([n, t]) => [n, toIso(t)]));
+          }
           if (c.paramsTruncated) out.paramsTruncated = true;
+          if (c.weeks.size > 0) out.weeks = Object.fromEntries([...c.weeks.entries()].sort().slice(-MAX_WEEKS));
           return out;
         })
         .sort((a, b) => b.calls - a.calls || a.id.localeCompare(b.id));
@@ -169,6 +182,20 @@ class UsageAggregator {
       endpoints,
     };
   }
+}
+
+function newClient() {
+  return {
+    calls: 0, firstSeen: null, lastSeen: null,
+    params: new Map(), paramsLastSeen: new Map(), paramsTruncated: false, weeks: new Map(),
+  };
+}
+
+/** The Monday (UTC) starting the week of `ms`, as "YYYY-MM-DD" — the key of usage.json `weeks`. */
+function weekOf(ms) {
+  const d = new Date(ms);
+  const monday = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - ((d.getUTCDay() + 6) % 7) * 86400e3;
+  return new Date(monday).toISOString().slice(0, 10);
 }
 
 /** --host values: exact host names, or globs like "*.example.com". Null = no filter. */
@@ -232,4 +259,4 @@ function toIso(ms) { return ms === null || ms === undefined ? null : new Date(ms
 function minTime(a, b) { return a === null ? b : b === null ? a : Math.min(a, b); }
 function maxTime(a, b) { return a === null ? b : b === null ? a : Math.max(a, b); }
 
-module.exports = { UsageAggregator, loadUsage, validateUsage, parseDuration, toMs, FORMAT, VERSION };
+module.exports = { UsageAggregator, loadUsage, validateUsage, parseDuration, toMs, weekOf, FORMAT, VERSION };

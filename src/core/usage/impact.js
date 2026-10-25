@@ -42,10 +42,38 @@ function applyUsageImpact(result, opts) {
     downgrade = true, now = Date.now(),
   } = opts;
 
-  const ignore = compileClientPatterns(ignoreClients);
-  const matcher = createRouteMatcher(baseSpec, { basePath: usage.basePath });
+  const { opIndex, meta } = indexUsage(usage, baseSpec, { file, ignoreClients, now });
 
-  // "GET /orders/{id}" → Map(clientId → { calls, lastSeen, params, paramsTruncated })
+  const blocker = downgradeBlocker(meta, { downgrade, minDays, maxAgeDays, minCoverage });
+  meta.downgrade = { enabled: blocker === null, reason: blocker };
+
+  const ctx = { opIndex, baseSpec, baseNorm, trusted: meta.trusted };
+  const annotate = (c) => (meta.trusted ? { ...c, impact: computeImpact(c, ctx) } : c);
+
+  let breakingChanges = result.breakingChanges.map(annotate);
+  const warnings = result.warnings.map(annotate);
+  let unusedBreakingChanges = [];
+
+  if (meta.downgrade.enabled) {
+    unusedBreakingChanges = breakingChanges.filter((c) => c.impact && c.impact.verdict === 'unused');
+    breakingChanges = breakingChanges.filter((c) => !(c.impact && c.impact.verdict === 'unused'));
+  }
+
+  return {
+    result: { ...result, breakingChanges, warnings, unusedBreakingChanges },
+    meta,
+  };
+}
+
+/**
+ * Maps a usage file onto the operations of `spec`:
+ *   opIndex  "GET /orders/{id}" → Map(clientId → { calls, lastSeen, params, paramsLastSeen, weeks, paramsTruncated })
+ *   meta     window, totals, coverage — the evidence the downgrade guards judge
+ */
+function indexUsage(usage, spec, { file = 'usage.json', ignoreClients = [], now = Date.now() } = {}) {
+  const ignore = compileClientPatterns(ignoreClients);
+  const matcher = createRouteMatcher(spec, { basePath: usage.basePath });
+
   const opIndex = new Map();
   let totalCalls = 0;
   let matchedCalls = 0;
@@ -63,11 +91,17 @@ function applyUsageImpact(result, opts) {
       const key = `${m.method} ${m.template}`;
       if (!opIndex.has(key)) opIndex.set(key, new Map());
       const byClient = opIndex.get(key);
-      const agg = byClient.get(c.id) || { calls: 0, lastSeen: null, params: {}, paramsTruncated: false };
+      const agg = byClient.get(c.id) ||
+        { calls: 0, lastSeen: null, params: {}, paramsLastSeen: {}, weeks: {}, paramsTruncated: false };
       agg.calls += c.calls;
       const seen = toMs(c.lastSeen);
       if (seen !== null && (agg.lastSeen === null || seen > agg.lastSeen)) agg.lastSeen = seen;
       for (const [name, n] of Object.entries(c.params || {})) agg.params[name] = (agg.params[name] || 0) + n;
+      for (const [name, t] of Object.entries(c.paramsLastSeen || {})) {
+        const ms = toMs(t);
+        if (ms !== null && !(agg.paramsLastSeen[name] >= ms)) agg.paramsLastSeen[name] = ms;
+      }
+      for (const [week, n] of Object.entries(c.weeks || {})) agg.weeks[week] = (agg.weeks[week] || 0) + n;
       if (c.paramsTruncated) agg.paramsTruncated = true;
       byClient.set(c.id, agg);
     }
@@ -93,26 +127,7 @@ function applyUsageImpact(result, opts) {
     operationsTotal: matcher.operations.length,
     trusted: matchedCalls > 0,
   };
-
-  const blocker = downgradeBlocker(meta, { downgrade, minDays, maxAgeDays, minCoverage });
-  meta.downgrade = { enabled: blocker === null, reason: blocker };
-
-  const ctx = { opIndex, baseSpec, baseNorm, trusted: meta.trusted };
-  const annotate = (c) => (meta.trusted ? { ...c, impact: computeImpact(c, ctx) } : c);
-
-  let breakingChanges = result.breakingChanges.map(annotate);
-  const warnings = result.warnings.map(annotate);
-  let unusedBreakingChanges = [];
-
-  if (meta.downgrade.enabled) {
-    unusedBreakingChanges = breakingChanges.filter((c) => c.impact && c.impact.verdict === 'unused');
-    breakingChanges = breakingChanges.filter((c) => !(c.impact && c.impact.verdict === 'unused'));
-  }
-
-  return {
-    result: { ...result, breakingChanges, warnings, unusedBreakingChanges },
-    meta,
-  };
+  return { opIndex, meta, matcher };
 }
 
 /** Why "zero calls" isn't strong enough evidence to stop failing the build — or null. */
@@ -256,4 +271,7 @@ function compileClientPatterns(patterns) {
 function round1(n) { return Math.round(n * 10) / 10; }
 function round3(n) { return Math.round(n * 1000) / 1000; }
 
-module.exports = { applyUsageImpact, compileClientPatterns };
+module.exports = {
+  applyUsageImpact, indexUsage, downgradeBlocker, endpointsOf, isObjectSchema, compileClientPatterns,
+  REQUEST_BODY_TYPES, BODYLESS_METHODS,
+};

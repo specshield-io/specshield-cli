@@ -46,6 +46,7 @@ describe('compare command surface (non-breaking baseline)', () => {
         '--usage-max-age',
         '--usage-min-coverage',
         '--no-usage-downgrade',
+        '--usage-quiet-days',
       ].sort()
     );
   });

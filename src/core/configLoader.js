@@ -116,13 +116,16 @@ function validateConfig(config, filePath) {
       if (u.minDays !== undefined && !(Number(u.minDays) >= 0)) {
         throw new Error(`Config error in "${filePath}": usage.minDays must be a number ≥ 0`);
       }
-      for (const key of ['maxAgeDays', 'minCoverage']) {
+      for (const key of ['maxAgeDays', 'minCoverage', 'quietDays']) {
         if (u[key] !== undefined && !(Number(u[key]) >= 0)) {
           throw new Error(`Config error in "${filePath}": usage.${key} must be a number ≥ 0`);
         }
       }
       if (u.downgrade !== undefined && typeof u.downgrade !== 'boolean') {
         throw new Error(`Config error in "${filePath}": usage.downgrade must be a boolean`);
+      }
+      if (u.contacts !== undefined && (typeof u.contacts !== 'object' || u.contacts === null || Array.isArray(u.contacts))) {
+        throw new Error(`Config error in "${filePath}": usage.contacts must map client ids to contacts`);
       }
       valid.usage = {
         file: u.file || null,
@@ -131,6 +134,8 @@ function validateConfig(config, filePath) {
         maxAgeDays: u.maxAgeDays !== undefined ? Number(u.maxAgeDays) : undefined,
         minCoverage: u.minCoverage !== undefined ? Number(u.minCoverage) : undefined,
         downgrade: u.downgrade,
+        quietDays: u.quietDays !== undefined ? Number(u.quietDays) : undefined,
+        contacts: u.contacts || {},
       };
     } else {
       throw new Error(`Config error in "${filePath}": usage must be a file path or an object`);

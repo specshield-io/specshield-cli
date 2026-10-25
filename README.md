@@ -42,7 +42,7 @@ What the CLI does:
 - [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
 
 **Commands — local & hosted compare**
-- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
+- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
 **Governance — lint & gate**
 - [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
@@ -333,6 +333,105 @@ specshield compare base.yaml target.yaml --usage usage.json --fail-on-breaking
 specshield usage show usage.json --spec api/openapi.yaml
 # NEVER CALLED IN THIS WINDOW  → candidates for deprecation
 # CALLED BUT NOT IN THE SPEC   → shadow endpoints your spec is missing
+```
+
+## Safe removal: deprecate → watch traffic drain → remove
+
+Deprecation usually means a spreadsheet, a calendar reminder and hope. Mark it in the
+spec instead, and SpecShield tracks who still calls it until it is safe to delete.
+
+**1. Mark what is going away** — an operation, a parameter, or a schema property:
+
+```yaml
+paths:
+  /v1/pets:
+    get:
+      deprecated: true
+      x-sunset: 2026-12-31          # optional: the date you plan to remove it
+  /pets:
+    get:
+      parameters:
+        - { name: sort, in: query, deprecated: true, schema: { type: string } }
+components:
+  schemas:
+    Pet:
+      properties:
+        tag: { type: string, deprecated: true }
+```
+
+**2. See who still uses it** (same `usage.json` as above):
+
+```bash
+specshield deprecations api/openapi.yaml --usage usage.json --csv callers.csv
+```
+
+```text
+  SpecShield™ Deprecations — Pets API
+  usage.json · 2026-08-26 → 2026-10-24 (59 days) · safe after 30 quiet days
+  3 deprecated items · 1 still called · 1 quiet · 1 safe to remove
+
+  ✖  STILL CALLED (1) — not safe to remove
+  GET    /v1/pets  · sunset 2026-09-30 PASSED 25 days ago
+      2 clients · 840 calls · last call 2 days ago   weekly ▇█▇▅▃▁··▂
+      ShopApp-iOS/5.2       820  last 2 days ago  → ios-team@shop.example
+      partner-x/1.0          20  last 41 days ago
+
+  ○  QUIET (1) — no calls, keep watching
+  GET    /pets  query parameter "sort"
+      no calls for 11 of the 30 days needed
+
+  ✔  SAFE TO REMOVE (1)
+  GET    /pets/{id}/old-photo
+      last called 45 days before the newest log line
+```
+
+| Status | Meaning |
+|---|---|
+| **still called** | a client called it in the last 7 days of the logs |
+| **can't verify** | a header or body field: logs don't show who sends or reads it, and the operation is still called |
+| **quiet** | draining — no calls for a week or more, but not for `--quiet-days` (default 30) yet |
+| **safe to remove** | no calls for at least `--quiet-days` |
+| **no verdict** | the usage file can't support one (stale, filtered, no timestamps) — the report says why |
+
+- Query parameters are judged by who **sends** them; operations by who calls them.
+- A deprecated property of a shared schema (`$ref`'d by many operations) is **one** row,
+  judged by the traffic of every operation that uses it.
+- **Who to tell:** map clients to owners in `.specshield.yml` and the report (and
+  `--csv`) names them:
+
+  ```yaml
+  usage:
+    file: usage.json
+    quietDays: 30
+    contacts:
+      ShopApp-iOS/*: ios-team@shop.example     # * globs; otherwise the exact client id
+      partner-x/1.0: "#partner-x"
+  ```
+- `--fail-on past-sunset` exits 1 when anything past its `x-sunset` date is still
+  called; `--fail-on in-use` when anything deprecated is still used. `--json` for scripts.
+
+**3. Remove it — the compare gate knows it was deprecated:**
+
+```bash
+specshield compare base.yaml target.yaml --usage usage.json --fail-on-breaking
+```
+
+- Removing a deprecated item that is **still called** fails, listing the callers:
+  `↳ deprecated (sunset 2026-09-30), but still called — tell the clients above before removing it`.
+- A deprecated item with **no calls for `--usage-quiet-days`** (default 30) has drained:
+  its removal passes, like an unused change.
+- A removal that **was never deprecated** is flagged: `↳ removed without being deprecated first`.
+
+**4. Track the drain week by week (Team plan):** add `--upload --org <orgKey>` and every
+run is stored on your dashboard (**Deprecations** page): the latest status per API, who
+still calls what, weekly calls per item, and the history across uploads. When an item
+becomes safe to remove, passes its sunset while still called, or is called again after
+going quiet, SpecShield posts to Slack (subscribe a webhook to **Deprecation update**)
+and emails whoever uploaded. Only the report is sent — counts per client, never logs.
+
+```bash
+# e.g. weekly in CI, after importing the week's logs
+specshield deprecations api/openapi.yaml --usage usage.json --upload --org acme --api payments
 ```
 
 ## Remote Compare
@@ -1294,6 +1393,9 @@ ignore:
 #   maxAgeDays: 30
 #   minCoverage: 25
 #   downgrade: true
+#   quietDays: 30                 # deprecated + no calls this long = safe to remove
+#   contacts:                     # who to tell, per client id (* globs)
+#     ShopApp-iOS/*: ios-team@shop.example
 
 # Hosted compare (set --remote on the CLI to override).
 remote:
@@ -1358,6 +1460,7 @@ specshield compare <base> <target> [options]
 | `--usage-max-age <days>` | The newest log line may be at most this old for unused changes to pass (default `30`) |
 | `--usage-min-coverage <pct>` | Percent of spec operations that must appear in the logs for unused changes to pass (default `25`) |
 | `--no-usage-downgrade` | Annotate impact only; keep unused breaking changes breaking |
+| `--usage-quiet-days <n>` | A deprecated item nobody called for this many days may be removed (default `30`) — see [Safe removal](#safe-removal-deprecate--watch-traffic-drain--remove) |
 | `--timeout <ms>` | Request timeout for remote mode (default `10000`) |
 
 ```bash

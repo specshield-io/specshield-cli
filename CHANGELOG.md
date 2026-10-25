@@ -1,5 +1,33 @@
 # SpecShield CLI changelog
 
+## Unreleased — safe removal: deprecate → watch traffic drain → remove
+
+### Added
+
+- **`specshield deprecations <spec> --usage usage.json`** lists everything the spec marks
+  `deprecated: true` (or gives an `x-sunset` date) — operations, parameters, request and
+  response fields — with who still calls it, the last call, calls per week, and a status:
+  still called · can't verify · quiet · safe to remove · no verdict. `--quiet-days`
+  (default 30), `--csv` (callers for outreach, spreadsheet-formula safe), `--fail-on
+  past-sunset|in-use`, `--json`, and `--upload --org <key>` to the dashboard (Team plan).
+- `.specshield.yml` `usage.contacts` maps client ids (or `*` globs) to an owner, shown in
+  the report and the CSV; `usage.quietDays` sets the quiet period.
+- `compare --usage` marks every removal with whether the base spec deprecated it first
+  (`deprecation` in `--json`). A deprecated item with no calls for `--usage-quiet-days`
+  (default 30) has drained and no longer fails the build; one still called stays breaking
+  with its callers; a removal that was never deprecated is flagged.
+- `usage import` records calls per week per client and when each query parameter was last
+  sent (additive `weeks` / `paramsLastSeen` in usage.json; older files still load).
+
+### Tested on real data
+
+Kubernetes' published CI audit log (106,445 requests) against the official
+`swagger.json`, with the upstream deprecations marked (the `v1 Endpoints` API, deprecated
+in v1.33; the `watch` endpoints; 9 fields documented as deprecated). Every per-operation
+count for the Endpoints API matched the raw audit events exactly. This run found that a
+deprecated property of a shared schema (`ObjectMeta.selfLink`) was listed once per
+operation and status code — 1,733 rows — so such properties are now one row each.
+
 ## 3.4.14 — 2026-10-26 — Kubernetes audit logs, Swagger 2.0 bodies
 
 Tested on the Kubernetes project's own published data: the API-server audit log of

@@ -49,6 +49,7 @@ compare
   .option('--usage-max-age <days>', 'Newest log line may be at most this old for unused changes to pass (default: 30)')
   .option('--usage-min-coverage <pct>', 'Percent of spec operations that must appear in the logs for unused changes to pass (default: 25)')
   .option('--no-usage-downgrade', 'Annotate impact only; keep unused breaking changes as breaking')
+  .option('--usage-quiet-days <n>', 'A deprecated item nobody called for this many days may be removed (default: 30)')
   .action(async (base, target, opts) => {
     try {
       // Load config
@@ -182,7 +183,9 @@ async function applyUsage(result, base, options) {
     logger.warn(`None of the calls in ${options.usage} match an operation in ${base}. ` +
       'Is it the right usage file? If the API is served under a prefix, re-import with --base-path.');
   }
-  return { ...annotated, usage: meta };
+  const { annotateDeprecations } = require('../core/usage/deprecations');
+  const quietDays = num(options.usageQuietDays, '--usage-quiet-days');
+  return { ...annotateDeprecations(annotated, baseSpec, { meta, quietDays }), usage: { ...meta, quietDays } };
 }
 
 async function runLocalComparison(base, target, options, spinner) {
@@ -317,6 +320,9 @@ function mergeOptions(config, cliOpts) {
     usageMinCoverage: cliOpts.usageMinCoverage !== undefined
       ? cliOpts.usageMinCoverage
       : config.usage && config.usage.minCoverage !== undefined ? config.usage.minCoverage : 25,
+    usageQuietDays: cliOpts.usageQuietDays !== undefined
+      ? cliOpts.usageQuietDays
+      : config.usage && config.usage.quietDays !== undefined ? config.usage.quietDays : 30,
     usageDowngrade: cliOpts.usageDowngrade === false
       ? false
       : !(config.usage && config.usage.downgrade === false),

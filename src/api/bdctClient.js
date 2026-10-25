@@ -121,6 +121,13 @@ async function governanceGate(server, apiToken, payload) {
   } catch (err) { throw apiError(err); }
 }
 
+async function uploadDeprecationReport(server, apiToken, payload) {
+  try {
+    const res = await buildClient(server, apiToken).post('/api/deprecations/reports', payload);
+    return res.data;
+  } catch (err) { throw apiError(err); }
+}
+
 module.exports = {
   publishProviderSpec,
   publishConsumerContract,
@@ -131,4 +138,5 @@ module.exports = {
   listProviderSpecs,
   listConsumerContracts,
   governanceGate,
+  uploadDeprecationReport,
 };

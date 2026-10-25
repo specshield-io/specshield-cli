@@ -38,6 +38,7 @@ function formatHuman(result) {
         lines.push(`    ${chalk.gray('from:')} ${chalk.red(c.oldValue)}  ${chalk.gray('→')}  ${chalk.green(c.newValue)}`);
       }
       if (c.impact) lines.push(...formatImpact(c, { detailed: true }));
+      if (c.deprecation) lines.push(formatDeprecation(c));
     }
     lines.push('');
   }
@@ -45,13 +46,16 @@ function formatHuman(result) {
   if (unused.length > 0) {
     const w = result.usage && result.usage.window;
     lines.push(chalk.green.bold('  ✔  BREAKING BUT UNUSED — safe to ship'));
-    lines.push(chalk.gray(`  0 calls ${w && w.from ? `between ${day(w.from)} and ${day(w.to)}` : 'in the usage window'}; these do not fail the build`));
+    const drained = unused.some((c) => c.deprecation && c.deprecation.drained);
+    lines.push(chalk.gray(`  0 calls ${w && w.from ? `between ${day(w.from)} and ${day(w.to)}` : 'in the usage window'}` +
+      (drained ? ` — or deprecated and quiet for ${result.usage.quietDays}+ days` : '') + '; these do not fail the build'));
     lines.push(chalk.gray('  ─────────────────────────────────────────'));
     for (const c of unused) {
       lines.push(`  ${chalk.green('○')} ${c.description}`);
       if (c.impact && c.impact.basis === 'query-parameter') {
         lines.push(chalk.gray(`    no client ${c.impact.parameterUse === 'omitted' ? 'omits' : 'sends'} "${c.impact.parameter}"`));
       }
+      if (c.deprecation) lines.push(formatDeprecation(c));
     }
     lines.push('');
   }
@@ -154,6 +158,23 @@ function formatImpact(c, { detailed }) {
     }
   }
   return lines;
+}
+
+/** Removals only: was this deprecated in the base spec before it was removed? */
+function formatDeprecation(c) {
+  const d = c.deprecation;
+  const used = c.impact && c.impact.verdict === 'used';
+  if (d.deprecated) {
+    const sunset = d.sunset ? ` (sunset ${d.sunset})` : '';
+    if (d.drained) {
+      return chalk.gray(`    ↳ deprecated${sunset} · drained: last call ${day(c.impact.lastSeen)}, ${d.quietForDays} days before the newest log line`);
+    }
+    return used
+      ? chalk.yellow(`    ↳ deprecated${sunset}, but still called — tell the clients above before removing it`)
+      : chalk.gray(`    ↳ deprecated${sunset} and unused — removal is the planned last step`);
+  }
+  return chalk.yellow('    ↳ removed without being deprecated first — callers got no warning' +
+    (used ? '. Mark it `deprecated: true` and watch it drain: specshield deprecations' : ''));
 }
 
 function scope(i) {

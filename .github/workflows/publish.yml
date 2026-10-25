@@ -63,7 +63,22 @@ jobs:
         run: npm config get registry
         continue-on-error: true
 
+      # Every push to main runs this job, but only a version bump can be
+      # published: npm refuses to overwrite a version (E403), which failed the
+      # workflow on docs-only commits.
+      - name: Check whether this version is already on npm
+        id: published
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "specshield@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::specshield@$VERSION is already on npm — skipping publish"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish
+        if: steps.published.outputs.exists != 'true'
         run: npm publish --specshield --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
