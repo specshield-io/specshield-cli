@@ -24,6 +24,17 @@ const { toMs } = require('./usageStore');
 
 const DAY = 86400e3;
 
+// Changes that only matter to clients SENDING a body. GET/HEAD/OPTIONS carry
+// no body, so their calls can't be affected — counting them (list/watch
+// traffic dominates real logs) inflated impact several-fold in real Kubernetes
+// audit data. FIELD_BECAME_REQUIRED is listed because it only breaks senders;
+// on the response side it is a stronger guarantee, not a break.
+const REQUEST_BODY_TYPES = new Set([
+  'REQUEST_FIELD_REMOVED', 'REQUEST_FIELD_TYPE_CHANGED', 'REQUEST_REQUIRED_FIELD_ADDED',
+  'REQUEST_TYPE_CHANGED', 'FIELD_BECAME_REQUIRED',
+]);
+const BODYLESS_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 function applyUsageImpact(result, opts) {
   const {
     usage, baseSpec, baseNorm, file = 'usage.json',
@@ -124,12 +135,15 @@ function downgradeBlocker(meta, { downgrade, minDays, maxAgeDays, minCoverage })
 }
 
 function computeImpact(change, { opIndex, baseSpec, baseNorm }) {
-  const endpoints = endpointsOf(change);
+  let endpoints = endpointsOf(change);
   if (endpoints.length === 0) {
     return { verdict: 'unknown', basis: null, reason: 'not tied to a specific endpoint' };
   }
   if (!endpoints.every(([m, p]) => operationExists(baseSpec, m, p))) {
     return { verdict: 'unknown', basis: null, reason: 'endpoint not found in the base spec' };
+  }
+  if (REQUEST_BODY_TYPES.has(change.type)) {
+    endpoints = endpoints.filter(([m]) => !BODYLESS_METHODS.has(m));
   }
 
   // Query-parameter changes can be judged per parameter: logs record the
@@ -195,12 +209,14 @@ function computeImpact(change, { opIndex, baseSpec, baseNorm }) {
 
 function endpointsOf(change) {
   if (change.path && change.method) return [[change.method.toUpperCase(), change.path]];
-  const out = [];
+  // A merged $ref change lists an endpoint once per occurrence (request AND
+  // response); count each endpoint's traffic once.
+  const seen = new Map();
   for (const e of change.affectedEndpoints || []) {
     const m = /^([A-Za-z]+) (\S+)$/.exec(e);
-    if (m) out.push([m[1].toUpperCase(), m[2]]);
+    if (m) seen.set(`${m[1].toUpperCase()} ${m[2]}`, [m[1].toUpperCase(), m[2]]);
   }
-  return out;
+  return [...seen.values()];
 }
 
 function operationExists(spec, method, path) {

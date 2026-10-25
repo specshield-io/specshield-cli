@@ -476,6 +476,88 @@ describe('real-log regressions', () => {
   });
 });
 
+// ─── Regressions from Kubernetes CI audit logs + official swagger.json ──────
+// ci-kubernetes-audit-kind-conformance (k8s master 765dd1d), 219,507 events;
+// api/openapi-spec/swagger.json at 765dd1d and v1.37.1.
+
+describe('kubernetes audit logs + Swagger 2.0 specs', () => {
+  const ev = (stage, verb, uri, extra = {}) => JSON.stringify({
+    kind: 'Event', apiVersion: 'audit.k8s.io/v1', level: 'Metadata', stage, verb, requestURI: uri,
+    user: { username: 'system:serviceaccount:kube-system:job-controller' },
+    userAgent: 'kube-controller-manager/v1.38.0 (linux/amd64) kubernetes/765dd1d/system:serviceaccount:kube-system:job-controller',
+    responseStatus: { code: 200 }, requestReceivedTimestamp: '2026-10-25T14:13:30.450713Z', ...extra,
+  });
+
+  test('audit events: only the final stage counts, verbs map to HTTP methods', () => {
+    expect(parseJsonLine(ev('RequestReceived', 'list', '/apis/batch/v1/jobs?limit=500'))).toBeNull();
+    expect(parseJsonLine(ev('ResponseStarted', 'watch', '/api/v1/pods?watch=true'))).toBeNull();
+    expect(parseJsonLine(ev('ResponseComplete', 'list', '/apis/batch/v1/jobs?limit=500')))
+      .toMatchObject({ method: 'GET', path: '/apis/batch/v1/jobs', query: 'limit=500', status: 200, userAgent: expect.stringMatching(/^kube-controller-manager/) });
+    expect(parseJsonLine(ev('ResponseComplete', 'deletecollection', '/api/v1/namespaces/x/pods')).method).toBe('DELETE');
+    expect(parseJsonLine(ev('ResponseComplete', 'patch', '/api/v1/nodes/n1')).method).toBe('PATCH');
+    // OPTIONS through the proxy subresource is logged with an empty verb.
+    expect(parseJsonLine(ev('ResponseComplete', '', '/api/v1/namespaces/p/pods/a/proxy?method=OPTIONS'))).toBeNull();
+    const rec = parseJsonLine(ev('ResponseComplete', 'get', '/api/v1/nodes/n1'));
+    expect(clientIdOf(rec, parseClientSpec('field:user.username'))).toBe('system:serviceaccount:kube-system:job-controller');
+    expect(clientIdOf(rec, parseClientSpec('ua'))).toBe('kube-controller-manager/1.38');
+  });
+
+  const SW2 = {
+    swagger: '2.0',
+    info: { title: 'k', version: 'unversioned' },
+    parameters: { 'body-x': { name: 'body', in: 'body', required: true, schema: { $ref: '#/definitions/Event' } }, pretty: { name: 'pretty', in: 'query', type: 'string' } },
+    paths: {
+      '/apis/events.k8s.io/v1/namespaces/{namespace}/events': {
+        parameters: [{ name: 'namespace', in: 'path', required: true, type: 'string' }, { $ref: '#/parameters/pretty' }],
+        get: { parameters: [{ name: 'limit', in: 'query', type: 'integer' }], responses: { 200: { description: 'OK', schema: { $ref: '#/definitions/EventList' } } } },
+        post: { parameters: [{ $ref: '#/parameters/body-x' }], responses: { 201: { description: 'Created', schema: { $ref: '#/definitions/Event' } } } },
+      },
+    },
+    definitions: {
+      Event: { type: 'object', required: ['eventTime'], properties: { eventTime: { type: 'string' }, reportingController: { type: 'string' } } },
+      EventList: { type: 'object', properties: { items: { type: 'array', items: { $ref: '#/definitions/Event' } } } },
+    },
+  };
+
+  test('Swagger 2.0: definitions, body parameter, response schema, path-level and $ref parameters', () => {
+    const n = normalizeSpec(SW2);
+    const ops = n.endpoints['/apis/events.k8s.io/v1/namespaces/{namespace}/events'];
+    expect(ops.get.parameters.map((p) => `${p.in}:${p.name}:${p.schema && p.schema.type}`).sort())
+      .toEqual(['path:namespace:string', 'query:limit:integer', 'query:pretty:string']);
+    expect(ops.post.parameters.map((p) => p.name).sort()).toEqual(['namespace', 'pretty']);
+    expect(Object.keys(ops.post.requestBody.properties)).toEqual(['eventTime', 'reportingController']);
+    expect(ops.get.responses['200'].properties.items.items.required).toEqual(['eventTime']);
+  });
+
+  test('Swagger 2.0: a field change is detected (it used to report "No changes")', () => {
+    const { diffSpecs } = require('../src/core/diffEngine');
+    const { classifyChanges } = require('../src/core/classifyChanges');
+    const target = JSON.parse(JSON.stringify(SW2));
+    target.definitions.Event.required.push('reportingController');
+    const r = classifyChanges(diffSpecs(normalizeSpec(SW2), normalizeSpec(target)));
+    expect(r.breakingChanges.map((c) => c.type)).toEqual(['FIELD_BECAME_REQUIRED']);
+    expect(r.breakingChanges[0].affectedEndpoints.length).toBeGreaterThan(1);
+  });
+
+  test('request-body changes ignore GET calls and count each endpoint once', () => {
+    const target = JSON.parse(JSON.stringify(SW2));
+    target.definitions.Event.required.push('reportingController');
+    const { diffSpecs } = require('../src/core/diffEngine');
+    const { classifyChanges } = require('../src/core/classifyChanges');
+    const res = classifyChanges(diffSpecs(normalizeSpec(SW2), normalizeSpec(target)));
+    const base = '/apis/events.k8s.io/v1/namespaces/{namespace}/events';
+    const usage = usageFile([
+      ep('GET', '/apis/events.k8s.io/v1/namespaces/default/events', [cl('namespace-controller', 496)]),
+      ep('POST', '/apis/events.k8s.io/v1/namespaces/default/events', [cl('kube-proxy', 6), cl('kubernetes-admin', 4)]),
+    ]);
+    const { result } = applyUsageImpact(res, { usage, baseSpec: SW2, baseNorm: normalizeSpec(SW2), now: NOW, minDays: 0 });
+    const i = result.breakingChanges[0].impact;
+    expect(i.calls).toBe(10);                                   // POST only, counted once
+    expect(i.clients.map((c) => c.id)).toEqual(['kube-proxy', 'kubernetes-admin']);
+    expect(base).toBeTruthy();
+  });
+});
+
 // ─── CLI end-to-end ─────────────────────────────────────────────────────────
 
 describe('specshield usage + compare --usage (CLI)', () => {

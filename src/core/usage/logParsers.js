@@ -25,7 +25,8 @@
  *   combined  nginx / Apache "combined" and "common" log formats
  *   alb       AWS Application Load Balancer access logs
  *   json      one JSON object per line — nginx JSON log_format, Kong file-log,
- *             API Gateway JSON access logs, Envoy/Traefik JSON, ECS-style logs
+ *             API Gateway JSON access logs, Envoy/Traefik JSON, ECS-style logs,
+ *             and Kubernetes API-server audit logs (audit.k8s.io Events)
  */
 
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT']);
@@ -114,6 +115,9 @@ function parseJsonLine(line) {
   let obj;
   try { obj = JSON.parse(trimmed); } catch { return null; }
   if (!obj || typeof obj !== 'object') return null;
+  if (obj.kind === 'Event' && typeof obj.apiVersion === 'string' && obj.apiVersion.startsWith('audit.k8s.io/')) {
+    return parseK8sAuditEvent(obj);
+  }
 
   let method = pick(obj, JSON_KEYS.method);
   let target = pick(obj, JSON_KEYS.path);
@@ -141,6 +145,40 @@ function parseJsonLine(line) {
     status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
     time: parseAnyTime(pick(obj, JSON_KEYS.time)),
     userAgent: nullIfDash(asString(pick(obj, JSON_KEYS.userAgent))),
+    extras: [],
+    json: obj,
+  };
+}
+
+// ─── Kubernetes audit events ────────────────────────────────────────────────
+
+// Kubernetes verbs → HTTP methods (kubernetes.io/docs/reference/access-authn-authz/authorization/#determine-the-request-verb)
+const K8S_VERBS = {
+  get: 'GET', list: 'GET', watch: 'GET',
+  create: 'POST', update: 'PUT', patch: 'PATCH',
+  delete: 'DELETE', deletecollection: 'DELETE',
+};
+
+/**
+ * One request is logged once per audit stage (RequestReceived,
+ * ResponseStarted for long-running calls, ResponseComplete). Count only the
+ * final stage so each request is counted once.
+ */
+function parseK8sAuditEvent(obj) {
+  if (obj.stage !== 'ResponseComplete' && obj.stage !== 'Panic') return null;
+  const method = K8S_VERBS[obj.verb];
+  if (!method || typeof obj.requestURI !== 'string') return null;
+  const { path, query } = splitTarget(obj.requestURI);
+  if (!path) return null;
+  const code = obj.responseStatus && Number(obj.responseStatus.code);
+  return {
+    method,
+    path,
+    query,
+    host: null,
+    status: Number.isInteger(code) && code >= 100 && code <= 599 ? code : null,
+    time: parseAnyTime(obj.requestReceivedTimestamp || obj.stageTimestamp),
+    userAgent: nullIfDash(asString(obj.userAgent)),
     extras: [],
     json: obj,
   };

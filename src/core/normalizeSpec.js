@@ -3,6 +3,12 @@
 /**
  * Normalize an OpenAPI spec into a flat, consistent internal model.
  * Resolves simple $ref references from components.schemas.
+ *
+ * Swagger 2.0 is mapped onto the same model: `definitions` stand in for
+ * components.schemas, the `in: body` parameter becomes the request body,
+ * `responses.<code>.schema` is the response schema, and non-body parameters
+ * carry their type inline instead of under `schema`. Path-level parameters
+ * and `$ref` parameters/responses are resolved for both versions.
  */
 function normalizeSpec(spec) {
   if (!spec || typeof spec !== 'object') {
@@ -10,7 +16,12 @@ function normalizeSpec(spec) {
   }
 
   const components = spec.components || {};
-  const schemas = components.schemas || {};
+  const schemas = components.schemas || spec.definitions || {};
+  const ctx = {
+    schemas,
+    parameters: components.parameters || spec.parameters || {},
+    responses: components.responses || spec.responses || {},
+  };
 
   const endpoints = {};
 
@@ -24,7 +35,7 @@ function normalizeSpec(spec) {
     for (const method of HTTP_METHODS) {
       if (!pathItem[method]) continue;
       const operation = pathItem[method];
-      methods[method] = normalizeOperation(operation, schemas);
+      methods[method] = normalizeOperation(operation, pathItem.parameters, ctx);
     }
 
     if (Object.keys(methods).length > 0) {
@@ -39,14 +50,36 @@ function normalizeSpec(spec) {
   };
 }
 
-function normalizeOperation(operation, schemas) {
+function normalizeOperation(operation, pathParams, ctx) {
+  const { schemas } = ctx;
+  const params = mergeParameters(pathParams, operation.parameters, ctx);
+  const body = params.find((p) => p.in === 'body');      // Swagger 2.0
   return {
     operationId: operation.operationId || null,
     summary: operation.summary || null,
-    parameters: normalizeParameters(operation.parameters || [], schemas),
-    requestBody: normalizeRequestBody(operation.requestBody, schemas),
-    responses: normalizeResponses(operation.responses || {}, schemas),
+    parameters: normalizeParameters(params.filter((p) => p.in !== 'body'), schemas),
+    requestBody: body
+      ? (body.schema ? resolveSchema(body.schema, schemas) : null)
+      : normalizeRequestBody(operation.requestBody, schemas),
+    responses: normalizeResponses(operation.responses || {}, ctx),
   };
+}
+
+/** Path-level parameters apply to every operation; an operation-level one with the same (in, name) overrides. */
+function mergeParameters(pathParams, opParams, ctx) {
+  const byKey = new Map();
+  for (const raw of [...(Array.isArray(pathParams) ? pathParams : []), ...(Array.isArray(opParams) ? opParams : [])]) {
+    const p = derefParameter(raw, ctx);
+    if (!p || !p.name || !p.in) continue;
+    byKey.set(`${p.in}:${p.name}`, p);
+  }
+  return [...byKey.values()];
+}
+
+function derefParameter(p, ctx) {
+  if (!p || typeof p !== 'object' || !p.$ref) return p;
+  const name = refName(p.$ref, ['#/components/parameters/', '#/parameters/']);
+  return name ? ctx.parameters[name] || null : null;
 }
 
 function normalizeParameters(params, schemas) {
@@ -54,8 +87,23 @@ function normalizeParameters(params, schemas) {
     name: p.name,
     in: p.in,
     required: Boolean(p.required),
-    schema: p.schema ? resolveSchema(p.schema, schemas) : null,
+    // Swagger 2.0 non-body parameters declare type/format/items/enum inline.
+    schema: p.schema
+      ? resolveSchema(p.schema, schemas)
+      : p.type ? resolveSchema(inlineParamSchema(p), schemas) : null,
   }));
+}
+
+function inlineParamSchema(p) {
+  const { name, in: _in, required, description, collectionFormat, allowEmptyValue, ...schema } = p;
+  return schema;
+}
+
+function refName(ref, prefixes) {
+  for (const prefix of prefixes) {
+    if (typeof ref === 'string' && ref.startsWith(prefix)) return ref.slice(prefix.length);
+  }
+  return null;
 }
 
 function normalizeRequestBody(requestBody, schemas) {
@@ -66,10 +114,18 @@ function normalizeRequestBody(requestBody, schemas) {
   return resolveSchema(mediaType.schema, schemas);
 }
 
-function normalizeResponses(responses, schemas) {
+function normalizeResponses(responses, ctx) {
+  const { schemas } = ctx;
   const result = {};
-  for (const [statusCode, response] of Object.entries(responses)) {
+  for (const [statusCode, raw] of Object.entries(responses)) {
+    const response = raw && raw.$ref
+      ? ctx.responses[refName(raw.$ref, ['#/components/responses/', '#/responses/'])]
+      : raw;
     if (!response) continue;
+    if (response.schema) {                                  // Swagger 2.0
+      result[statusCode] = resolveSchema(response.schema, schemas);
+      continue;
+    }
     const content = response.content || {};
     const mediaType = content['application/json'] || Object.values(content)[0];
     result[statusCode] = mediaType && mediaType.schema
@@ -96,8 +152,8 @@ function resolveSchema(schema, schemas, depth = 0) {
   if (depth > 10) return { type: 'circular' };
 
   if (schema.$ref) {
-    const refName = schema.$ref.replace('#/components/schemas/', '');
-    const resolved = schemas[refName];
+    const name = refName(schema.$ref, ['#/components/schemas/', '#/definitions/']);
+    const resolved = name ? schemas[name] : undefined;
     if (!resolved) return { type: 'unknown', ref: schema.$ref };
     return resolveSchema(resolved, schemas, depth + 1);
   }

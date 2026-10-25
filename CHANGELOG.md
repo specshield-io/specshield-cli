@@ -1,6 +1,32 @@
 # SpecShield CLI changelog
 
-## Unreleased — usage-aware compare: "who does this change break?"
+## Unreleased — Kubernetes audit logs, Swagger 2.0 bodies
+
+Tested on the Kubernetes project's own published data: the API-server audit log of
+CI job `ci-kubernetes-audit-kind-conformance` (219,507 events, k8s master `765dd1d`) and
+the official `api/openapi-spec/swagger.json` at `765dd1d` and `v1.37.1`. Impact numbers
+were checked against counts taken directly from the raw audit events.
+
+### Added
+
+- `usage import` reads **Kubernetes API-server audit logs** (`audit.k8s.io` Events):
+  verbs map to HTTP methods, and only the final stage (`ResponseComplete`/`Panic`) is
+  counted — the same request is otherwise logged up to three times.
+
+### Fixed
+
+- **Swagger 2.0 request and response bodies were not compared.** `#/definitions/` refs,
+  the `in: body` parameter and `responses.<code>.schema` were ignored, so a removed or
+  newly required field reported "No changes". Comparing Kubernetes v1.37.1 → master now
+  finds the 18 schemas whose fields became required.
+- Path-level parameters and `$ref` parameters/responses (OpenAPI 3 and Swagger 2.0) are
+  now resolved; they were skipped before.
+- Usage impact of request-body changes no longer counts `GET`/`HEAD`/`OPTIONS` calls, and a
+  merged change listing the same endpoint twice no longer double-counts its traffic (on
+  Kubernetes data: 551 → 12 calls for `events.k8s.io/v1` Event fields, matching the raw
+  log exactly).
+
+## 3.4.13 — 2026-10-25 — usage-aware compare: "who does this change break?"
 
 ### Added
 

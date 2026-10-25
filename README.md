@@ -278,8 +278,13 @@ specshield usage import /var/log/nginx/access.log* --spec api/openapi.yaml
 ```
 
 - **Formats:** nginx/Apache combined & common, AWS ALB, and JSON lines (nginx JSON
-  `log_format`, Kong file-log, API Gateway, Envoy/Traefik, ECS). Auto-detected; `.gz`
-  files and stdin (`-`) work. Force one with `--format combined|alb|json`.
+  `log_format`, Kong file-log, API Gateway, Caddy, Traefik, Envoy, Google Cloud LB, ECS,
+  and **Kubernetes API-server audit logs**). Auto-detected; `.gz` files and stdin (`-`)
+  work. Force one with `--format combined|alb|json`.
+- **Kubernetes:** point it at the API-server audit log and the cluster's
+  `swagger.json`, and identify clients by their authenticated identity:
+  `specshield usage import audit.log --spec swagger.json --client field:user.username`.
+  Each request is counted once (final audit stage only).
 - **Clients** are identified by User-Agent by default (`MyShop-iOS/5.2.1` → `MyShop-iOS/5.2`).
   Use a better signal if you log one: `--client field:consumer.username` (JSON logs),
   `--client extra:1` (first quoted field after the User-Agent in combined logs), and prefix
@@ -304,7 +309,9 @@ specshield compare base.yaml target.yaml --usage usage.json --fail-on-breaking
 
 - **Endpoint and method removals, body/response field changes** → the clients calling that
   operation. Access logs don't show which response fields a client reads, so for field
-  changes this is "clients that may be affected", and the report says so.
+  changes this is "clients that may be affected", and the report says so. Request-body
+  changes (a field removed or made required) count only calls that send a body — `GET`
+  traffic can't be affected by them.
 - **Query parameters** are judged exactly: a removed parameter affects only clients that
   *send* it; a parameter that became required affects only clients that *omit* it.
 - **Zero calls → "breaking but unused"**: listed separately and excluded from
