@@ -1,6 +1,6 @@
 # SpecShield CLI changelog
 
-## Unreleased — Kubernetes audit logs, Swagger 2.0 bodies
+## 3.4.14 — 2026-10-26 — Kubernetes audit logs, Swagger 2.0 bodies
 
 Tested on the Kubernetes project's own published data: the API-server audit log of
 CI job `ci-kubernetes-audit-kind-conformance` (219,507 events, k8s master `765dd1d`) and
