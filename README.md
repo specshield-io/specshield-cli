@@ -42,7 +42,7 @@ What the CLI does:
 - [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
 
 **Commands — local & hosted compare**
-- [Local Compare](#local-compare) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
+- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
 **Governance — lint & gate**
 - [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
@@ -248,6 +248,75 @@ specshield compare base.yaml target.yaml --output result.json
 
 # Ignore a specific change
 specshield compare base.yaml target.yaml --ignore "DELETE /admin removed" --fail-on-breaking
+```
+
+## Who does a change break? — usage-aware compare
+
+A spec diff tells you **what** changed. Your access logs know **who** still calls it.
+`specshield usage` joins the two, so every breaking change shows the clients it would
+break — and a removal that nobody calls stops failing the build.
+
+```text
+  ✖  BREAKING CHANGES
+  ● DELETE /orders/{orderId}/receipt method was removed
+    ↳ impact: 1 client · 134 calls · last seen 72 min ago
+        MyShop-iOS/5.2  100% of calls  134 · last seen 72 min ago
+  ● Parameter "expand" (query) was removed from GET /orders
+    ↳ impact: 1 client · 200 calls sending "expand" · last seen 2 h ago
+        okhttp/4.12   33% of calls  200 · last seen 2 h ago
+
+  ✔  BREAKING BUT UNUSED — safe to ship
+  0 calls between 2026-10-05 and 2026-10-25; these do not fail the build
+  ○ GET /legacy-report was removed
+```
+
+**1. Turn access logs into a usage summary** (runs locally — raw logs never leave the machine):
+
+```bash
+specshield usage import /var/log/nginx/access.log* --spec api/openapi.yaml
+# → usage.json: per endpoint × client, call counts, query-parameter names, first/last seen
+```
+
+- **Formats:** nginx/Apache combined & common, AWS ALB, and JSON lines (nginx JSON
+  `log_format`, Kong file-log, API Gateway, Envoy/Traefik, ECS). Auto-detected; `.gz`
+  files and stdin (`-`) work. Force one with `--format combined|alb|json`.
+- **Clients** are identified by User-Agent by default (`MyShop-iOS/5.2.1` → `MyShop-iOS/5.2`).
+  Use a better signal if you log one: `--client field:consumer.username` (JSON logs),
+  `--client extra:1` (first quoted field after the User-Agent in combined logs), and prefix
+  `hash:` for API keys — `--client hash:extra:1` stores a one-way hash, never the key.
+- **Privacy:** only aggregates are stored — path templates, counts, timestamps, and query
+  parameter *names*. No IDs from concrete paths, no query values, no IPs, no bodies.
+- `--spec` maps `/v1/orders/123` onto `/orders/{orderId}` exactly as your spec defines it
+  (base paths from `servers` / `basePath`, or `--base-path`). Without it, IDs are guessed.
+- Add more days later with `--append` (a file imported twice is detected and skipped);
+  limit the window with `--since 30d`.
+
+**2. Compare with impact:**
+
+```bash
+specshield compare base.yaml target.yaml --usage usage.json --fail-on-breaking
+```
+
+- **Endpoint and method removals, body/response field changes** → the clients calling that
+  operation. Access logs don't show which response fields a client reads, so for field
+  changes this is "clients that may be affected", and the report says so.
+- **Query parameters** are judged exactly: a removed parameter affects only clients that
+  *send* it; a parameter that became required affects only clients that *omit* it.
+- **Zero calls → "breaking but unused"**: listed separately and excluded from
+  `--fail-on-breaking`. SpecShield only does this when the evidence is good enough — at
+  least `--usage-min-days` (default 7) of logs, the newest no older than 30 days, and calls
+  that actually match the base spec. Otherwise the change stays breaking and the report
+  says why. `--no-usage-downgrade` keeps everything breaking and only annotates.
+- Leave health checks and bots out: `--usage-ignore-client 'kube-probe/*' --usage-ignore-client healthcheck`.
+- `--json` adds `impact` to each change, plus `unusedBreakingChanges`, `summary.unusedBreaking`
+  and a `usage` block. Without `--usage` the JSON is unchanged.
+
+**3. Find dead and undocumented endpoints:**
+
+```bash
+specshield usage show usage.json --spec api/openapi.yaml
+# NEVER CALLED IN THIS WINDOW  → candidates for deprecation
+# CALLED BUT NOT IN THE SPEC   → shadow endpoints your spec is missing
 ```
 
 ## Remote Compare
@@ -1201,6 +1270,13 @@ severity: error                  # info | warning | error
 ignore:
   - "DELETE /admin removed"      # match by substring; repeatable
 
+# Usage-aware compare (same as --usage …; see "Who does a change break?").
+# usage:
+#   file: usage.json
+#   ignoreClients: ["kube-probe/*"]
+#   minDays: 7
+#   downgrade: true
+
 # Hosted compare (set --remote on the CLI to override).
 remote:
   enabled: false
@@ -1258,6 +1334,10 @@ specshield compare <base> <target> [options]
 | `--severity <level>` | Minimum severity shown: `info` / `warning` / `error` (default `info`) |
 | `--config <path>` | Path to `.specshield.yml` |
 | `--remote-url <url>` | Override the hosted API base URL |
+| `--usage <file>` | `usage.json` from `specshield usage import` — show which clients each breaking change affects |
+| `--usage-ignore-client <pattern>` | Leave a client out of the impact (repeatable; `*` globs, otherwise substring) |
+| `--usage-min-days <n>` | Days of usage needed before an unused breaking change stops failing the build (default `7`) |
+| `--no-usage-downgrade` | Annotate impact only; keep unused breaking changes breaking |
 | `--timeout <ms>` | Request timeout for remote mode (default `10000`) |
 
 ```bash

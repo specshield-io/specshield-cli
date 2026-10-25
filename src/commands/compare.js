@@ -43,6 +43,10 @@ compare
   .option('--api-key <key>', 'API key for hosted mode (overrides env and stored config)')
   .option('--remote-url <url>', 'Override the hosted API base URL')
   .option('--timeout <ms>', 'Request timeout for remote mode (ms)', '10000')
+  .option('--usage <file>', 'usage.json from "specshield usage import" — show which clients each breaking change affects')
+  .option('--usage-ignore-client <pattern>', 'Leave a client out of the impact, e.g. health checks (repeatable; * globs)', collect, [])
+  .option('--usage-min-days <n>', 'Days of usage needed before an unused breaking change stops failing the build (default: 7)')
+  .option('--no-usage-downgrade', 'Annotate impact only; keep unused breaking changes as breaking')
   .action(async (base, target, opts) => {
     try {
       // Load config
@@ -82,6 +86,13 @@ compare
 
       // Apply severity filter
       result = filterBySeverity(result, options.severity);
+
+      // Join the changes to real traffic. Runs after the ignore list and
+      // severity filter so it only annotates what will be reported, and
+      // before the exit code so unused breaking changes don't fail the build.
+      if (options.usage) {
+        result = await applyUsage(result, base, options);
+      }
 
       // Output
       if (options.json) {
@@ -138,6 +149,33 @@ compare
       process.exit(2);
     }
   });
+
+async function applyUsage(result, base, options) {
+  const { loadUsage } = require('../core/usage/usageStore');
+  const { applyUsageImpact } = require('../core/usage/impact');
+
+  const usage = await loadUsage(options.usage);
+  const baseSpec = parseSpec(await loadSpec(base), base);
+  const minDays = Number(options.usageMinDays);
+  if (!Number.isFinite(minDays) || minDays < 0) {
+    throw new Error(`--usage-min-days must be a number ≥ 0, got "${options.usageMinDays}"`);
+  }
+
+  const { result: annotated, meta } = applyUsageImpact(result, {
+    usage,
+    baseSpec,
+    baseNorm: normalizeSpec(baseSpec),
+    file: path.basename(options.usage),
+    ignoreClients: options.usageIgnoreClient,
+    minDays,
+    downgrade: options.usageDowngrade,
+  });
+  if (!meta.trusted && meta.totalCalls > 0) {
+    logger.warn(`None of the calls in ${options.usage} match an operation in ${base}. ` +
+      'Is it the right usage file? If the API is served under a prefix, re-import with --base-path.');
+  }
+  return { ...annotated, usage: meta };
+}
 
 async function runLocalComparison(base, target, options, spinner) {
   if (spinner) spinner.text = 'Loading base spec...';
@@ -257,6 +295,17 @@ function mergeOptions(config, cliOpts) {
     remote: cliOpts.remote || (config.remote && config.remote.enabled) || false,
     remoteUrl: cliOpts.remoteUrl || null,
     timeout: cliOpts.timeout || (config.remote && config.remote.timeout) || 10000,
+    usage: cliOpts.usage || (config.usage && config.usage.file) || null,
+    usageIgnoreClient: [
+      ...(cliOpts.usageIgnoreClient || []),
+      ...((config.usage && config.usage.ignoreClients) || []),
+    ],
+    usageMinDays: cliOpts.usageMinDays !== undefined
+      ? cliOpts.usageMinDays
+      : config.usage && config.usage.minDays !== undefined ? config.usage.minDays : 7,
+    usageDowngrade: cliOpts.usageDowngrade === false
+      ? false
+      : !(config.usage && config.usage.downgrade === false),
   };
 }
 

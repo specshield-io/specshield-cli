@@ -39,6 +39,11 @@ describe('compare command surface (non-breaking baseline)', () => {
         '--remote-url',
         '--severity',
         '--timeout',
+        // Usage-aware impact (additive; opt-in via --usage).
+        '--usage',
+        '--usage-ignore-client',
+        '--usage-min-days',
+        '--no-usage-downgrade',
       ].sort()
     );
   });

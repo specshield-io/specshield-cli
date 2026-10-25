@@ -1,12 +1,14 @@
 'use strict';
 
 const chalk = require('chalk');
+const { fmt, plural, pct, day, spanDays, ago } = require('./usage/format');
 
 function formatHuman(result) {
   const lines = [];
   const { breakingChanges, additions, modifications, warnings } = result;
+  const unused = result.unusedBreakingChanges || [];
 
-  const total = breakingChanges.length + additions.length + modifications.length + warnings.length;
+  const total = breakingChanges.length + additions.length + modifications.length + warnings.length + unused.length;
 
   if (total === 0) {
     lines.push(chalk.green('✔  No changes detected between the two specs.'));
@@ -21,8 +23,10 @@ function formatHuman(result) {
     `  ${chalk.red.bold(`${breakingChanges.length} breaking`)}  ` +
     `${chalk.green(`${additions.length} additions`)}  ` +
     `${chalk.yellow(`${modifications.length} modifications`)}  ` +
-    `${chalk.gray(`${warnings.length} warnings`)}`
+    `${chalk.gray(`${warnings.length} warnings`)}` +
+    (result.usage ? `  ${chalk.green(`${unused.length} breaking but unused`)}` : '')
   );
+  if (result.usage) lines.push(...formatUsageHeader(result.usage));
   lines.push('');
 
   if (breakingChanges.length > 0) {
@@ -32,6 +36,21 @@ function formatHuman(result) {
       lines.push(`  ${chalk.red('●')} ${c.description}`);
       if (c.oldValue && c.newValue) {
         lines.push(`    ${chalk.gray('from:')} ${chalk.red(c.oldValue)}  ${chalk.gray('→')}  ${chalk.green(c.newValue)}`);
+      }
+      if (c.impact) lines.push(...formatImpact(c, { detailed: true }));
+    }
+    lines.push('');
+  }
+
+  if (unused.length > 0) {
+    const w = result.usage && result.usage.window;
+    lines.push(chalk.green.bold('  ✔  BREAKING BUT UNUSED — safe to ship'));
+    lines.push(chalk.gray(`  0 calls ${w && w.from ? `between ${day(w.from)} and ${day(w.to)}` : 'in the usage window'}; these do not fail the build`));
+    lines.push(chalk.gray('  ─────────────────────────────────────────'));
+    for (const c of unused) {
+      lines.push(`  ${chalk.green('○')} ${c.description}`);
+      if (c.impact && c.impact.basis === 'query-parameter') {
+        lines.push(chalk.gray(`    no client ${c.impact.parameterUse === 'omitted' ? 'omits' : 'sends'} "${c.impact.parameter}"`));
       }
     }
     lines.push('');
@@ -63,6 +82,7 @@ function formatHuman(result) {
     lines.push(chalk.gray('  ─────────────────────────────────────────'));
     for (const c of warnings) {
       lines.push(`  ${chalk.gray('!')} ${c.description}`);
+      if (c.impact) lines.push(...formatImpact(c, { detailed: false }));
     }
     // Whether a constraint change actually breaks depends on which side of the
     // contract it sits on, which this engine does not track. Say so rather than
@@ -82,8 +102,73 @@ function formatHuman(result) {
   return lines.join('\n');
 }
 
+// ─── Usage impact ───────────────────────────────────────────────────────────
+
+const MAX_CLIENTS_SHOWN = 5;
+
+function formatUsageHeader(u) {
+  const lines = [];
+  if (!u.trusted) {
+    lines.push(chalk.yellow(`  Usage: ${u.file} was not applied — none of its calls match an operation in the base spec.`));
+    return lines;
+  }
+  const span = spanDays(u.window);
+  lines.push(chalk.gray(
+    `  Usage: ${u.file} · ${u.window.from ? `${day(u.window.from)} → ${day(u.window.to)}` : 'no timestamps'}` +
+    (span !== null ? ` (${span} days)` : '') +
+    ` · ${plural(u.matchedCalls, 'call')} · ${plural(u.clients, 'client')}` +
+    (u.ignoredCalls ? ` · ${fmt(u.ignoredCalls)} ignored` : '')));
+  if (!u.downgrade.enabled && u.downgrade.reason !== 'disabled by --no-usage-downgrade') {
+    lines.push(chalk.yellow(`  Unused breaking changes still fail the build: ${u.downgrade.reason}.`));
+  }
+  return lines;
+}
+
+function formatImpact(c, { detailed }) {
+  const i = c.impact;
+  const lines = [];
+  if (i.verdict === 'unknown') {
+    lines.push(chalk.gray(`    ↳ impact: unknown — ${i.reason}`));
+    return lines;
+  }
+  if (i.verdict === 'unused') {
+    lines.push(chalk.green(`    ↳ impact: 0 calls${scope(i)} — nobody would notice this change`));
+    return lines;
+  }
+
+  const n = i.clients.length;
+  lines.push(chalk.yellow(
+    `    ↳ impact: ${plural(n, 'client')} · ${plural(i.calls, 'call')}${scope(i)}` +
+    ` · last seen ${ago(i.lastSeen)}`));
+  if (detailed) {
+    const width = Math.min(32, Math.max(...i.clients.slice(0, MAX_CLIENTS_SHOWN).map((x) => x.id.length)));
+    for (const cl of i.clients.slice(0, MAX_CLIENTS_SHOWN)) {
+      lines.push(
+        `        ${chalk.bold(cl.id.padEnd(width))}  ${pct(cl.share).padStart(4)} of calls  ` +
+        chalk.gray(`${fmt(cl.calls)} · last seen ${ago(cl.lastSeen)}`));
+    }
+    if (n > MAX_CLIENTS_SHOWN) lines.push(chalk.gray(`        …and ${n - MAX_CLIENTS_SHOWN} more`));
+    if (i.basis === 'endpoint' && isFieldLevel(c)) {
+      lines.push(chalk.gray('        (clients calling this endpoint — access logs do not show which fields they use)'));
+    }
+  }
+  return lines;
+}
+
+function scope(i) {
+  if (i.basis !== 'query-parameter') return '';
+  return i.parameterUse === 'omitted'
+    ? ` without "${i.parameter}"`
+    : ` sending "${i.parameter}"`;
+}
+
+/** Changes below the operation level, where "calls the endpoint" over-approximates "is affected". */
+function isFieldLevel(c) {
+  return !['ENDPOINT_REMOVED', 'METHOD_REMOVED'].includes(c.type);
+}
+
 function formatJson(result) {
-  return {
+  const out = {
     summary: {
       breaking: result.breakingChanges.length,
       additions: result.additions.length,
@@ -95,6 +180,14 @@ function formatJson(result) {
     modifications: result.modifications,
     warnings: result.warnings,
   };
+  // Additive only, and only with --usage: CI consumers parsing the existing
+  // shape see no difference unless they opt in.
+  if (result.usage) {
+    out.summary.unusedBreaking = (result.unusedBreakingChanges || []).length;
+    out.unusedBreakingChanges = result.unusedBreakingChanges || [];
+    out.usage = result.usage;
+  }
+  return out;
 }
 
 module.exports = { formatHuman, formatJson };

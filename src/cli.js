@@ -11,6 +11,7 @@ const governCommand = require('./commands/govern');
 const historyCommand = require('./commands/history');
 const shareCommand = require('./commands/share');
 const whoamiCommand = require('./commands/whoami');
+const usageCommand = require('./commands/usage');
 
 const program = new Command();
 
@@ -32,6 +33,7 @@ program.addCommand(governCommand);
 program.addCommand(historyCommand);
 program.addCommand(shareCommand);
 program.addCommand(whoamiCommand);
+program.addCommand(usageCommand);
 
 program.parseAsync(process.argv).catch((err) => {
   const logger = require('./utils/logger');

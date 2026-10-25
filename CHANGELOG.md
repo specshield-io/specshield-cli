@@ -1,5 +1,23 @@
 # SpecShield CLI changelog
 
+## Unreleased — usage-aware compare: "who does this change break?"
+
+### Added
+
+- **`specshield usage import <logs...>`** — aggregates access logs (nginx/Apache combined
+  & common, AWS ALB, JSON lines; `.gz` and stdin) into `usage.json`: per endpoint × client
+  call counts, query-parameter names, first/last seen. Runs locally; stores no concrete
+  IDs, query values, IPs or bodies. `--spec`, `--base-path`, `--client ua|field:|extra:`
+  (with `hash:`), `--since`, `--append` (duplicate files skipped), `--format`.
+- **`specshield usage show [file] [--spec]`** — top endpoints and clients; with `--spec`,
+  operations never called in the window and calls the spec doesn't document.
+- **`compare --usage <file>`** — annotates breaking changes and warnings with the clients
+  that exercise them (exact for query parameters). Breaking changes with zero calls move to
+  `unusedBreakingChanges` and don't fail `--fail-on-breaking`, only when the usage covers
+  ≥ `--usage-min-days` (default 7), is ≤ 30 days old and matches the base spec.
+  Also `--usage-ignore-client`, `--no-usage-downgrade`, and a `usage:` block in
+  `.specshield.yml`. JSON output is unchanged unless `--usage` is given.
+
 ## 3.4.0 — 2026-07-29 — `govern` command (API governance in the CLI)
 
 ### Added

@@ -105,6 +105,31 @@ function validateConfig(config, filePath) {
     };
   }
 
+  if (config.usage !== undefined && config.usage !== null) {
+    if (typeof config.usage === 'string') {
+      valid.usage = { file: config.usage };
+    } else if (typeof config.usage === 'object' && !Array.isArray(config.usage)) {
+      const u = config.usage;
+      if (u.ignoreClients !== undefined && !Array.isArray(u.ignoreClients)) {
+        throw new Error(`Config error in "${filePath}": usage.ignoreClients must be an array`);
+      }
+      if (u.minDays !== undefined && !(Number(u.minDays) >= 0)) {
+        throw new Error(`Config error in "${filePath}": usage.minDays must be a number ≥ 0`);
+      }
+      if (u.downgrade !== undefined && typeof u.downgrade !== 'boolean') {
+        throw new Error(`Config error in "${filePath}": usage.downgrade must be a boolean`);
+      }
+      valid.usage = {
+        file: u.file || null,
+        ignoreClients: (u.ignoreClients || []).filter(Boolean).map(String),
+        minDays: u.minDays !== undefined ? Number(u.minDays) : undefined,
+        downgrade: u.downgrade,
+      };
+    } else {
+      throw new Error(`Config error in "${filePath}": usage must be a file path or an object`);
+    }
+  }
+
   return valid;
 }
 
