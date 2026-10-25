@@ -27,18 +27,28 @@ class UsageAggregator {
    * @param {object} [opts.matcher]   from createRouteMatcher (import --spec)
    * @param {number} [opts.sinceMs]   drop records older than this epoch ms
    */
-  constructor({ clientSpec, matcher = null, sinceMs = null }) {
+  constructor({ clientSpec, matcher = null, sinceMs = null, hosts = [] }) {
     this.clientSpec = clientSpec;
     this.matcher = matcher;
     this.sinceMs = sinceMs;
+    this.hostTest = compileHostFilter(hosts);
+    this.hostsSeen = new Map();
     this.endpoints = new Map();
     this.unmatchedCount = 0;
-    this.stats = { requests: 0, matched: 0, unmatched: 0, notFound: 0, tooOld: 0, overflow: 0 };
+    this.stats = { requests: 0, matched: 0, unmatched: 0, notFound: 0, tooOld: 0, otherHost: 0, overflow: 0 };
     this.from = null;
     this.to = null;
   }
 
   add(record) {
+    // One load balancer often fronts several APIs by host name. Requests for
+    // another host must not count as usage of this API.
+    if (record.host) {
+      if (this.hostTest && !this.hostTest(record.host)) { this.stats.otherHost++; return; }
+      if (this.hostsSeen.size < 50 || this.hostsSeen.has(record.host)) {
+        this.hostsSeen.set(record.host, (this.hostsSeen.get(record.host) || 0) + 1);
+      }
+    }
     if (this.sinceMs !== null && record.time !== null && record.time < this.sinceMs) {
       this.stats.tooOld++;
       return;
@@ -159,6 +169,18 @@ class UsageAggregator {
       endpoints,
     };
   }
+}
+
+/** --host values: exact host names, or globs like "*.example.com". Null = no filter. */
+function compileHostFilter(hosts) {
+  const list = (hosts || []).filter(Boolean).map((h) => String(h).toLowerCase());
+  if (list.length === 0) return null;
+  const tests = list.map((h) => {
+    if (!h.includes('*')) return (x) => x === h;
+    const re = new RegExp('^' + h.split('*').map((p) => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+    return (x) => re.test(x);
+  });
+  return (host) => tests.some((t) => t(host));
 }
 
 /** Reads and validates a usage.json. Throws with a readable message. */

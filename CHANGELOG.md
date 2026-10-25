@@ -15,8 +15,23 @@
   that exercise them (exact for query parameters). Breaking changes with zero calls move to
   `unusedBreakingChanges` and don't fail `--fail-on-breaking`, only when the usage covers
   ≥ `--usage-min-days` (default 7), is ≤ 30 days old and matches the base spec.
-  Also `--usage-ignore-client`, `--no-usage-downgrade`, and a `usage:` block in
-  `.specshield.yml`. JSON output is unchanged unless `--usage` is given.
+  Also `--usage-ignore-client`, `--usage-max-age`, `--usage-min-coverage`,
+  `--no-usage-downgrade`, and a `usage:` block in `.specshield.yml`. JSON output is
+  unchanged unless `--usage` is given.
+
+### Fixed (found by testing on real logs — SEART-GHS API + live spec, Elastic, AWS ALB examples)
+
+- Object-typed query parameters (Spring DTOs) were judged by their own name, which never
+  appears in URLs, and reported as unused while 1,491 calls sent their fields.
+- Filtered or sampled logs made unseen endpoints look unused: unused changes now pass only
+  when ≥ 25% of the spec's operations appear in the logs (`--usage-min-coverage`).
+- The 30-day staleness guard couldn't be relaxed for archived logs (`--usage-max-age`).
+- JSON logs: added the field names of Elastic (`agent`, `response`), Caddy, Traefik, Envoy
+  and Google Cloud LB; previously Elastic JSON gave 1 client where the same events in
+  combined format gave 36.
+- Multi-word User-Agent products are kept ("Debian APT-HTTP/1.3", not "Debian").
+- `usage import --host` filters by host; ALB/JSON logs from a load balancer serving
+  several APIs no longer mix their traffic, and the import warns when hosts are mixed.
 
 ## 3.4.0 — 2026-07-29 — `govern` command (API governance in the CLI)
 

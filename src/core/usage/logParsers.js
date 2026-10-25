@@ -11,6 +11,8 @@
  *
  *   method     upper-case HTTP method
  *   path       URL path only — no scheme/host, no query string
+ *   host       lower-case host without port, when the log records it (ALB,
+ *              JSON with a host field, absolute request URLs), else null
  *   query      raw query string without the leading '?' ('' when absent)
  *   status     numeric status code, or null
  *   time       epoch ms, or null when the line carries no parseable timestamp
@@ -83,19 +85,27 @@ function parseAlb(line) {
 
 // ─── JSON lines ─────────────────────────────────────────────────────────────
 
+// Field names used by common producers: nginx/Apache JSON log_format, Kong
+// file-log, Caddy, Traefik, Envoy, Google Cloud HTTP(S) LB, AWS API Gateway,
+// ECS/OpenTelemetry, Elastic examples. Order matters — first non-empty wins,
+// so nested keys come before same-named containers ("response.status" before
+// "response").
 const JSON_KEYS = {
-  method: ['method', 'request_method', 'httpMethod', 'http_method', 'verb',
-    'request.method', 'req.method', 'http.method', 'http.request.method'],
-  path: ['path', 'uri', 'request_uri', 'url', 'request.uri', 'request.url', 'req.url',
-    'req.path', 'http.url', 'http.target', 'url.original', 'url.path'],
+  method: ['method', 'request_method', 'httpMethod', 'http_method', 'verb', 'RequestMethod',
+    'request.method', 'req.method', 'http.method', 'http.request.method', 'httpRequest.requestMethod'],
+  path: ['path', 'uri', 'request_uri', 'url', 'RequestPath', 'request.uri', 'request.url', 'req.url',
+    'req.path', 'http.url', 'http.target', 'url.original', 'url.path', 'httpRequest.requestUrl'],
   query: ['query', 'query_string', 'args', 'url.query'],
-  status: ['status', 'status_code', 'statusCode', 'response.status', 'res.statusCode',
-    'http.status_code', 'http.response.status_code'],
+  host: ['host', 'http_host', 'RequestHost', 'request.host', 'request.headers.host', 'request.headers.Host',
+    'req.headers.host', 'headers.host', 'url.domain', 'http.host', 'domainName'],
+  status: ['status', 'status_code', 'statusCode', 'response_code', 'DownstreamStatus', 'OriginStatus',
+    'response.status', 'res.statusCode', 'http.status_code', 'http.response.status_code',
+    'httpRequest.status', 'response'],
   time: ['time', 'timestamp', '@timestamp', 'time_iso8601', 'time_local', 'requestTime',
-    'requestTimeEpoch', 'started_at', 'ts', 'start_time'],
-  userAgent: ['user_agent', 'http_user_agent', 'userAgent', 'user_agent.original',
-    'request.headers.user-agent', 'req.headers.user-agent', 'headers.user-agent',
-    'http.user_agent', 'request.headers.User-Agent'],
+    'requestTimeEpoch', 'started_at', 'ts', 'start_time', 'StartUTC'],
+  userAgent: ['user_agent', 'http_user_agent', 'userAgent', 'agent', 'user_agent.original',
+    'request.headers.user-agent', 'request.headers.User-Agent', 'req.headers.user-agent',
+    'headers.user-agent', 'http.user_agent', 'request_User-Agent', 'httpRequest.userAgent'],
 };
 
 function parseJsonLine(line) {
@@ -118,7 +128,7 @@ function parseJsonLine(line) {
   method = method.toUpperCase();
   if (!HTTP_METHODS.has(method)) return null;
 
-  const { path, query } = splitTarget(target);
+  const { path, query, host } = splitTarget(target);
   if (!path) return null;
   const explicitQuery = pick(obj, JSON_KEYS.query);
   const status = Number(pick(obj, JSON_KEYS.status));
@@ -127,6 +137,7 @@ function parseJsonLine(line) {
     method,
     path,
     query: query || (typeof explicitQuery === 'string' ? explicitQuery.replace(/^\?/, '') : ''),
+    host: host || normalizeHost(asString(pick(obj, JSON_KEYS.host))),
     status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
     time: parseAnyTime(pick(obj, JSON_KEYS.time)),
     userAgent: nullIfDash(asString(pick(obj, JSON_KEYS.userAgent))),
@@ -192,17 +203,21 @@ function splitRequestLine(s) {
   if (parts.length < 2) return null;
   const method = parts[0].toUpperCase();
   if (!HTTP_METHODS.has(method)) return null;
-  const { path, query } = splitTarget(parts[1]);
+  const { path, query, host } = splitTarget(parts[1]);
   if (!path) return null;
-  return { method, path, query };
+  return { method, path, query, host };
 }
 
 function splitTarget(target) {
   let t = target;
-  // Absolute URL (ALB, some proxies) → keep only the path + query.
-  const abs = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i.exec(t);
-  if (abs) t = t.slice(abs[0].length) || '/';
-  if (!t.startsWith('/')) return { path: null, query: '' };
+  let host = null;
+  // Absolute URL (ALB, some proxies) → keep only the path + query, note the host.
+  const abs = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i.exec(t);
+  if (abs) {
+    host = normalizeHost(abs[1]);
+    t = t.slice(abs[0].length) || '/';
+  }
+  if (!t.startsWith('/')) return { path: null, query: '', host };
   const hash = t.indexOf('#');
   if (hash >= 0) t = t.slice(0, hash);
   const q = t.indexOf('?');
@@ -210,7 +225,15 @@ function splitTarget(target) {
   const query = q >= 0 ? t.slice(q + 1) : '';
   path = path.replace(/\/{2,}/g, '/');
   if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
-  return { path, query };
+  return { path, query, host };
+}
+
+/** "API.Example.com:443" → "api.example.com"; "[::1]:80" → "[::1]". */
+function normalizeHost(h) {
+  if (!h || h === '-') return null;
+  const s = String(h).trim().toLowerCase().replace(/^.*@/, '');
+  const m = /^(\[[^\]]+\]|[^:]+)(?::\d+)?$/.exec(s);
+  return m ? m[1] : null;
 }
 
 /** Query-string parameter NAMES only — values are never kept. */

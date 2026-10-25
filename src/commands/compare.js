@@ -46,6 +46,8 @@ compare
   .option('--usage <file>', 'usage.json from "specshield usage import" — show which clients each breaking change affects')
   .option('--usage-ignore-client <pattern>', 'Leave a client out of the impact, e.g. health checks (repeatable; * globs)', collect, [])
   .option('--usage-min-days <n>', 'Days of usage needed before an unused breaking change stops failing the build (default: 7)')
+  .option('--usage-max-age <days>', 'Newest log line may be at most this old for unused changes to pass (default: 30)')
+  .option('--usage-min-coverage <pct>', 'Percent of spec operations that must appear in the logs for unused changes to pass (default: 25)')
   .option('--no-usage-downgrade', 'Annotate impact only; keep unused breaking changes as breaking')
   .action(async (base, target, opts) => {
     try {
@@ -156,10 +158,14 @@ async function applyUsage(result, base, options) {
 
   const usage = await loadUsage(options.usage);
   const baseSpec = parseSpec(await loadSpec(base), base);
-  const minDays = Number(options.usageMinDays);
-  if (!Number.isFinite(minDays) || minDays < 0) {
-    throw new Error(`--usage-min-days must be a number ≥ 0, got "${options.usageMinDays}"`);
-  }
+  const num = (value, flag, max = Infinity) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > max) throw new Error(`${flag} must be a number from 0 to ${max}, got "${value}"`);
+    return n;
+  };
+  const minDays = num(options.usageMinDays, '--usage-min-days');
+  const maxAgeDays = num(options.usageMaxAge, '--usage-max-age');
+  const minCoverage = num(options.usageMinCoverage, '--usage-min-coverage', 100);
 
   const { result: annotated, meta } = applyUsageImpact(result, {
     usage,
@@ -168,6 +174,8 @@ async function applyUsage(result, base, options) {
     file: path.basename(options.usage),
     ignoreClients: options.usageIgnoreClient,
     minDays,
+    maxAgeDays,
+    minCoverage,
     downgrade: options.usageDowngrade,
   });
   if (!meta.trusted && meta.totalCalls > 0) {
@@ -303,6 +311,12 @@ function mergeOptions(config, cliOpts) {
     usageMinDays: cliOpts.usageMinDays !== undefined
       ? cliOpts.usageMinDays
       : config.usage && config.usage.minDays !== undefined ? config.usage.minDays : 7,
+    usageMaxAge: cliOpts.usageMaxAge !== undefined
+      ? cliOpts.usageMaxAge
+      : config.usage && config.usage.maxAgeDays !== undefined ? config.usage.maxAgeDays : 30,
+    usageMinCoverage: cliOpts.usageMinCoverage !== undefined
+      ? cliOpts.usageMinCoverage
+      : config.usage && config.usage.minCoverage !== undefined ? config.usage.minCoverage : 25,
     usageDowngrade: cliOpts.usageDowngrade === false
       ? false
       : !(config.usage && config.usage.downgrade === false),

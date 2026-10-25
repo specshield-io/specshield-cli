@@ -116,6 +116,11 @@ function validateConfig(config, filePath) {
       if (u.minDays !== undefined && !(Number(u.minDays) >= 0)) {
         throw new Error(`Config error in "${filePath}": usage.minDays must be a number ≥ 0`);
       }
+      for (const key of ['maxAgeDays', 'minCoverage']) {
+        if (u[key] !== undefined && !(Number(u[key]) >= 0)) {
+          throw new Error(`Config error in "${filePath}": usage.${key} must be a number ≥ 0`);
+        }
+      }
       if (u.downgrade !== undefined && typeof u.downgrade !== 'boolean') {
         throw new Error(`Config error in "${filePath}": usage.downgrade must be a boolean`);
       }
@@ -123,6 +128,8 @@ function validateConfig(config, filePath) {
         file: u.file || null,
         ignoreClients: (u.ignoreClients || []).filter(Boolean).map(String),
         minDays: u.minDays !== undefined ? Number(u.minDays) : undefined,
+        maxAgeDays: u.maxAgeDays !== undefined ? Number(u.maxAgeDays) : undefined,
+        minCoverage: u.minCoverage !== undefined ? Number(u.minCoverage) : undefined,
         downgrade: u.downgrade,
       };
     } else {

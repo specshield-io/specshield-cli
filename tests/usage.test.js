@@ -107,8 +107,9 @@ describe('log parsers', () => {
   });
 
   test('splitTarget normalises slashes and drops fragments', () => {
-    expect(splitTarget('//a//b/?q=1#frag')).toEqual({ path: '/a/b', query: 'q=1' });
-    expect(splitTarget('*')).toEqual({ path: null, query: '' });
+    expect(splitTarget('//a//b/?q=1#frag')).toEqual({ path: '/a/b', query: 'q=1', host: null });
+    expect(splitTarget('https://API.x.io:8443/a?b')).toEqual({ path: '/a', query: 'b', host: 'api.x.io' });
+    expect(splitTarget('*')).toEqual({ path: null, query: '', host: null });
   });
 });
 
@@ -381,6 +382,97 @@ describe('report output with usage', () => {
     expect(withUsage.usage.trusted).toBe(true);
     const plain = formatJson(RESULT);
     expect(Object.keys(plain)).toEqual(['summary', 'breakingChanges', 'additions', 'modifications', 'warnings']);
+  });
+});
+
+// ─── Regressions found by testing on real logs ──────────────────────────────
+// SEART-GHS (real REST API, nginx, Dec 2023–Feb 2024) + its live OpenAPI spec;
+// Elastic sample logs (same events as combined and JSON); AWS ALB doc examples.
+
+describe('real-log regressions', () => {
+  test('object-typed query param (Spring DTO) is judged by endpoint, not by its never-sent name', () => {
+    const spec = {
+      openapi: '3.0.1',
+      paths: { '/r/search': { get: { parameters: [
+        { name: 'searchParameterDto', in: 'query', required: true, schema: { $ref: '#/components/schemas/Dto' } },
+        { name: 'sort', in: 'query', schema: { type: 'array', items: { type: 'string' } } },
+      ], responses: { 200: { description: 'ok' } } } } },
+      components: { schemas: { Dto: { type: 'object', properties: { language: { type: 'string' } } } } },
+    };
+    const usage = usageFile([ep('GET', '/r/search', [cl('browser', 50, { language: 50, page: 50 })])]);
+    const res = {
+      breakingChanges: [
+        change('PARAMETER_REMOVED', { path: '/r/search', method: 'get', field: 'parameters.searchParameterDto' }),
+        change('PARAMETER_REMOVED', { path: '/r/search', method: 'get', field: 'parameters.sort' }),
+      ],
+      additions: [], modifications: [], warnings: [],
+    };
+    const { result } = applyUsageImpact(res, { usage, baseSpec: spec, baseNorm: normalizeSpec(spec), now: NOW, minCoverage: 0 });
+    expect(result.breakingChanges.map((c) => [c.field, c.impact.basis, c.impact.calls])).toEqual([
+      ['parameters.searchParameterDto', 'endpoint', 50],
+    ]);
+    expect(result.unusedBreakingChanges.map((c) => c.field)).toEqual(['parameters.sort']);
+  });
+
+  test('logs covering few spec operations (filtered/sampled) block the downgrade', () => {
+    const narrow = usageFile([ep('GET', '/v1/orders', [cl('a/1', 10)])]);
+    const { meta, result } = run({ usage: narrow });
+    expect(meta).toMatchObject({ operationsSeen: 1, operationsTotal: 8 });
+    expect(meta.downgrade.reason).toMatch(/only 1 of 8 operations/);
+    expect(result.unusedBreakingChanges).toHaveLength(0);
+    expect(run({ usage: narrow, minCoverage: 0 }).result.unusedBreakingChanges.length).toBeGreaterThan(0);
+  });
+
+  test('--usage-max-age allows deliberately analysing archived logs', () => {
+    const old = { ...USAGE, window: usageFile([], { from: NOW - 900 * DAY, to: NOW - 880 * DAY }).window };
+    expect(run({ usage: old }).meta.downgrade.reason).toMatch(/880 days old/);
+    expect(run({ usage: old, maxAgeDays: 1000 }).meta.downgrade.enabled).toBe(true);
+  });
+
+  test('JSON field names from Elastic, Caddy, Traefik, Google Cloud LB', () => {
+    expect(parseJsonLine('{"time":"17/May/2015:08:05:32 +0000","request":"GET /downloads/product_1 HTTP/1.1","response":304,"agent":"Debian APT-HTTP/1.3 (0.8.16)"}'))
+      .toMatchObject({ method: 'GET', path: '/downloads/product_1', status: 304, userAgent: 'Debian APT-HTTP/1.3 (0.8.16)' });
+    expect(parseJsonLine('{"ts":1760000000.5,"request":{"method":"GET","host":"api.x.io","uri":"/a?b=1","headers":{"User-Agent":["caddy-client/2.1"]}},"status":201}'))
+      .toMatchObject({ method: 'GET', path: '/a', query: 'b=1', host: 'api.x.io', status: 201, userAgent: 'caddy-client/2.1' });
+    expect(parseJsonLine('{"RequestMethod":"DELETE","RequestPath":"/t/1","RequestHost":"API.X.io:443","DownstreamStatus":204,"StartUTC":"2026-10-01T00:00:00Z","request_User-Agent":"tr/1"}'))
+      .toMatchObject({ method: 'DELETE', path: '/t/1', host: 'api.x.io', status: 204, userAgent: 'tr/1' });
+    expect(parseJsonLine('{"httpRequest":{"requestMethod":"POST","requestUrl":"https://g.example.com/v1/x?y=2","status":200,"userAgent":"gcp/3"},"timestamp":"2026-10-01T00:00:00Z"}'))
+      .toMatchObject({ method: 'POST', path: '/v1/x', query: 'y=2', host: 'g.example.com', status: 200, userAgent: 'gcp/3' });
+  });
+
+  test('multi-word User-Agent products are kept', () => {
+    expect(normalizeUserAgent('Debian APT-HTTP/1.3 (0.8.16~exp12ubuntu10.21)')).toBe('Debian APT-HTTP/1.3');
+    expect(normalizeUserAgent('Chef Client/10.18.2 (ruby-1.9.3-p327; ohai-6.16.0)')).toBe('Chef Client/10.18');
+    expect(normalizeUserAgent('Feedfetcher-Google; (+http://www.google.com/feedfetcher.html)')).toBe('Feedfetcher-Google');
+    expect(normalizeUserAgent('Some Bot')).toBe('Some Bot');
+  });
+
+  test('all AWS ALB documentation examples parse, with host', () => {
+    const tg = 'arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets/73e2d6bc24d8a067';
+    const lines = [
+      `http 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 192.168.131.39:2817 10.0.0.1:80 0.000 0.001 0.000 200 200 34 366 "GET http://www.example.com:80/ HTTP/1.1" "curl/7.46.0" - - ${tg} "Root=1-58337262-36d228ad5d99923122bbe354" "-" "-" 0 2018-07-02T22:22:48.364000Z "forward" "-" "-" "10.0.0.1:80" "200" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"`,
+      `h2 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 10.0.1.252:48160 10.0.0.66:9000 0.000 0.002 0.000 200 200 5 257 "GET https://10.0.2.105:773/ HTTP/2.0" "curl/7.46.0" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 ${tg} "Root=1-58337327-72bd00b0343d75b906739c42" "-" "-" 1 2018-07-02T22:22:48.364000Z "redirect" "https://example.com:80/" "-" "10.0.0.66:9000" "200" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"`,
+      `wss 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 10.0.0.140:44244 10.0.0.171:8010 0.000 0.001 0.000 101 101 218 786 "GET https://10.0.0.30:443/ HTTP/1.1" "-" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 ${tg} "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 1 2018-07-02T22:22:48.364000Z "forward" "-" "-" "10.0.0.171:8010" "101" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"`,
+      `http 2018-11-30T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 192.168.131.39:2817 - 0.000 0.001 0.000 502 - 34 366 "GET http://www.example.com:80/ HTTP/1.1" "curl/7.46.0" - - ${tg} "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 0 2018-11-30T22:22:48.364000Z "forward" "-" "LambdaInvalidResponse" "-" "-" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"`,
+    ];
+    expect(detectFormat(lines)).toBe('alb');
+    expect(lines.map((l) => { const r = parseAlb(l); return [r.host, r.status, r.userAgent]; })).toEqual([
+      ['www.example.com', 200, 'curl/7.46.0'],
+      ['10.0.2.105', 200, 'curl/7.46.0'],
+      ['10.0.0.30', 101, null],
+      ['www.example.com', 502, 'curl/7.46.0'],
+    ]);
+    // Malformed requests are logged by ALB as "- http://host:80- -" → skipped.
+    expect(parseAlb(lines[0].replace('"GET http://www.example.com:80/ HTTP/1.1"', '"- http://www.example.com:80- -"'))).toBeNull();
+  });
+
+  test('--host keeps only the API being analysed', () => {
+    const agg = new UsageAggregator({ clientSpec: parseClientSpec('ua'), hosts: ['api.example.com', '*.internal.example.com'] });
+    agg.add({ ...rec('GET', '/a'), host: 'api.example.com' });
+    agg.add({ ...rec('GET', '/a'), host: 'admin.example.com' });
+    agg.add({ ...rec('GET', '/a'), host: 'svc.internal.example.com' });
+    agg.add({ ...rec('GET', '/a'), host: null });               // log without host → kept
+    expect(agg.stats).toMatchObject({ requests: 3, otherHost: 1 });
   });
 });
 

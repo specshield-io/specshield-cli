@@ -28,6 +28,7 @@ usage
   .option('--format <format>', 'Log format: auto | combined | alb | json', 'auto')
   .option('--client <source>', 'How to identify clients: ua | field:<path> | extra:<n>, optionally hash:-prefixed', 'ua')
   .option('--base-path <path>', 'Path prefix the API is served under, e.g. /api/v1 (default: from the spec servers)')
+  .option('--host <name>', 'Only count requests for this host, e.g. api.example.com or *.example.com (repeatable)', collect, [])
   .option('--since <duration>', 'Only count requests newer than this, e.g. 30d')
   .option('--append', 'Add to an existing --out file instead of replacing it')
   .action(async (logs, opts) => {
@@ -50,7 +51,7 @@ usage
         }
       }
 
-      const aggregator = new UsageAggregator({ clientSpec, matcher, sinceMs });
+      const aggregator = new UsageAggregator({ clientSpec, matcher, sinceMs, hosts: opts.host });
       const sources = existing ? [...(existing.sources || [])] : [];
       const seen = new Set(sources.map((s) => s.fingerprint).filter(Boolean));
       const imported = [];
@@ -85,7 +86,9 @@ usage
       });
       await fsExtra.outputFile(opts.out, JSON.stringify(out, null, 2) + '\n');
 
-      printImportSummary(out, imported, runStats, { outFile: opts.out, matcher, appended: !!existing });
+      printImportSummary(out, imported, runStats, {
+        outFile: opts.out, matcher, appended: !!existing, hostsSeen: aggregator.hostsSeen, hostFilter: opts.host.length > 0,
+      });
       exitAfterFlush(0);
     } catch (err) {
       logger.error(`Error: ${err.message}`);
@@ -93,7 +96,7 @@ usage
     }
   });
 
-function printImportSummary(out, imported, run, { outFile, matcher, appended }) {
+function printImportSummary(out, imported, run, { outFile, matcher, appended, hostsSeen, hostFilter }) {
   const lines = [];
   const parsed = imported.reduce((n, r) => n + r.parsed, 0);
   const skipped = imported.reduce((n, r) => n + r.skipped, 0);
@@ -110,6 +113,12 @@ function printImportSummary(out, imported, run, { outFile, matcher, appended }) 
   lines.push(`  ${plural(out.endpoints.length, 'endpoint')} · ${plural(clients.size, 'client')}` +
     (matcher ? ` · ${fmt(run.matched)} matched the spec · ${fmt(run.unmatched)} not in the spec` : ''));
   if (run.notFound) lines.push(chalk.gray(`  ${plural(run.notFound, 'request')} to unknown paths answered 404/405 skipped (scanners)`));
+  if (run.otherHost) lines.push(chalk.gray(`  ${plural(run.otherHost, 'request')} for other hosts skipped (--host)`));
+  if (!hostFilter && hostsSeen.size > 1) {
+    const top = [...hostsSeen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([h, n]) => `${h} (${fmt(n)})`);
+    lines.push(chalk.yellow(`  Requests for ${hostsSeen.size} hosts are mixed: ${top.join(', ')}${hostsSeen.size > 4 ? ', …' : ''}.`));
+    lines.push(chalk.yellow('  If they are different APIs, re-import with --host <name> so they don\'t count as usage of this one.'));
+  }
   if (run.tooOld) lines.push(chalk.gray(`  ${plural(run.tooOld, 'request')} older than --since skipped`));
   if (run.overflow) lines.push(chalk.yellow(`  ${plural(run.overflow, 'request')} dropped: endpoint limit reached (use --spec to group paths)`));
   if (skipped) lines.push(chalk.gray(`  ${plural(skipped, 'line')} skipped (not a request)`));
@@ -144,6 +153,7 @@ usage
       const top = Math.max(1, parseInt(opts.top, 10) || 15);
       let unused = null;
       let undocumented = null;
+      let calledCount = 0;
 
       if (opts.spec) {
         const spec = parseSpec(await loadSpec(opts.spec), opts.spec);
@@ -155,6 +165,7 @@ usage
           if (m && m.operation) called.add(`${m.method} ${m.template}`);
           else undocumented.push({ method: e.method, path: e.path, calls: e.calls, lastSeen: e.lastSeen, clients: e.clients.length });
         }
+        calledCount = called.size;
         unused = matcher.operations
           .filter((o) => !called.has(`${o.method} ${o.template}`))
           .map((o) => ({ method: o.method, path: o.template }));
@@ -170,7 +181,7 @@ usage
         return exitAfterFlush(0);
       }
 
-      process.stdout.write(renderShow(data, { top, unused, undocumented }) + '\n');
+      process.stdout.write(renderShow(data, { top, unused, undocumented, seenOps: calledCount }) + '\n');
       exitAfterFlush(0);
     } catch (err) {
       logger.error(`Error: ${err.message}`);
@@ -178,7 +189,7 @@ usage
     }
   });
 
-function renderShow(data, { top, unused, undocumented }) {
+function renderShow(data, { top, unused, undocumented, seenOps }) {
   const lines = [];
   const total = data.endpoints.reduce((n, e) => n + e.calls, 0);
   lines.push('');
@@ -195,7 +206,7 @@ function renderShow(data, { top, unused, undocumented }) {
     for (const c of shown) {
       lines.push(chalk.gray(`         ${c.id.padEnd(28)} ${pct(c.calls / e.calls).padStart(4)}  last seen ${ago(c.lastSeen)}`));
     }
-    if (e.clients.length > shown.length) lines.push(chalk.gray(`         …and ${e.clients.length - shown.length} more client(s)`));
+    if (e.clients.length > shown.length) lines.push(chalk.gray(`         …and ${plural(e.clients.length - shown.length, 'more client')}`));
   }
   if (data.endpoints.length > top) lines.push(chalk.gray(`  …${data.endpoints.length - top} more endpoint(s) — raise --top`));
 
@@ -203,6 +214,11 @@ function renderShow(data, { top, unused, undocumented }) {
     lines.push('');
     lines.push(chalk.green.bold(`  ✔  NEVER CALLED IN THIS WINDOW (${unused.length}) — candidates for deprecation`));
     lines.push(chalk.gray('  ─────────────────────────────────────────'));
+    const total = unused.length + seenOps;
+    if (total > 0 && seenOps / total < 0.25) {
+      lines.push(chalk.yellow(`  Only ${seenOps} of ${total} operations appear in these logs. If the logs are filtered,`));
+      lines.push(chalk.yellow('  sampled or from one server of several, this list is not reliable.'));
+    }
     if (unused.length === 0) lines.push(chalk.gray('  Every operation in the spec was called.'));
     for (const o of unused) lines.push(`  ${chalk.green('○')} ${o.method} ${o.path}`);
   }
@@ -218,6 +234,10 @@ function renderShow(data, { top, unused, undocumented }) {
   }
   lines.push('');
   return lines.join('\n');
+}
+
+function collect(value, previous) {
+  return previous.concat([value]);
 }
 
 module.exports = usage;

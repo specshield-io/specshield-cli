@@ -22,13 +22,13 @@ const { toMs } = require('./usageStore');
  * downgradeBlocker). Otherwise they are annotated and stay breaking.
  */
 
-const STALE_AFTER_DAYS = 30;
 const DAY = 86400e3;
 
 function applyUsageImpact(result, opts) {
   const {
     usage, baseSpec, baseNorm, file = 'usage.json',
-    ignoreClients = [], minDays = 7, downgrade = true, now = Date.now(),
+    ignoreClients = [], minDays = 7, maxAgeDays = 30, minCoverage = 25,
+    downgrade = true, now = Date.now(),
   } = opts;
 
   const ignore = compileClientPatterns(ignoreClients);
@@ -75,10 +75,15 @@ function applyUsageImpact(result, opts) {
     clients: clientIds.size,
     matchRate: totalCalls > 0 ? round3(matchedCalls / totalCalls) : 0,
     basePaths: matcher.basePaths,
+    // Share of the spec's operations that appear in the logs. A low share
+    // usually means the logs are filtered (one route exported), sampled, or
+    // from one node of several — and then "0 calls" proves nothing.
+    operationsSeen: opIndex.size,
+    operationsTotal: matcher.operations.length,
     trusted: matchedCalls > 0,
   };
 
-  const blocker = downgradeBlocker(meta, { downgrade, minDays });
+  const blocker = downgradeBlocker(meta, { downgrade, minDays, maxAgeDays, minCoverage });
   meta.downgrade = { enabled: blocker === null, reason: blocker };
 
   const ctx = { opIndex, baseSpec, baseNorm, trusted: meta.trusted };
@@ -100,15 +105,20 @@ function applyUsageImpact(result, opts) {
 }
 
 /** Why "zero calls" isn't strong enough evidence to stop failing the build — or null. */
-function downgradeBlocker(meta, { downgrade, minDays }) {
+function downgradeBlocker(meta, { downgrade, minDays, maxAgeDays, minCoverage }) {
   if (!downgrade) return 'disabled by --no-usage-downgrade';
   if (!meta.trusted) return 'no call in the usage file matches an operation in the base spec';
   if (meta.days === null) return 'the logs had no timestamps, so the time window is unknown';
   if (meta.days < minDays) {
     return `the usage covers ${meta.days} day(s); at least ${minDays} are needed so weekly/monthly clients show up (--usage-min-days)`;
   }
-  if (meta.staleDays > STALE_AFTER_DAYS) {
-    return `the newest log line is ${Math.floor(meta.staleDays)} days old — re-import recent logs`;
+  if (meta.staleDays > maxAgeDays) {
+    return `the newest log line is ${Math.floor(meta.staleDays)} days old — re-import recent logs (--usage-max-age)`;
+  }
+  const coverage = meta.operationsTotal > 0 ? (meta.operationsSeen / meta.operationsTotal) * 100 : 0;
+  if (coverage < minCoverage) {
+    return `only ${meta.operationsSeen} of ${meta.operationsTotal} operations in the spec appear in the logs — ` +
+      'they look filtered, sampled or from one server of several (--usage-min-coverage)';
   }
   return null;
 }
@@ -128,10 +138,14 @@ function computeImpact(change, { opIndex, baseSpec, baseNorm }) {
   let param = null;
   const pm = /^parameters\.(.+)$/.exec(change.field || '');
   if (pm && endpoints.length === 1) {
-    const loc = paramLocation(baseNorm, endpoints[0][0], endpoints[0][1], pm[1]);
+    const p = findParam(baseNorm, endpoints[0][0], endpoints[0][1], pm[1]);
     const byClient = opIndex.get(`${endpoints[0][0]} ${endpoints[0][1]}`);
     const truncated = byClient && [...byClient.values()].some((c) => c.paramsTruncated);
-    if (loc === 'query' && !truncated) param = pm[1];
+    // An object-typed query parameter (Spring's @ModelAttribute DTOs, form
+    // explode, deepObject) never appears in the URL under its own name — its
+    // properties do. Judging it by name would call a heavily used parameter
+    // unused, so judge it by who calls the endpoint instead.
+    if (p && p.in === 'query' && !isObjectSchema(p.schema) && !truncated) param = pm[1];
   }
   const omitters = change.type === 'PARAMETER_BECAME_REQUIRED';
 
@@ -194,10 +208,17 @@ function operationExists(spec, method, path) {
   return Boolean(item && item[method.toLowerCase()]);
 }
 
-function paramLocation(baseNorm, method, path, name) {
+function findParam(baseNorm, method, path, name) {
   const op = baseNorm && baseNorm.endpoints && baseNorm.endpoints[path] && baseNorm.endpoints[path][method.toLowerCase()];
-  const p = op && (op.parameters || []).find((x) => x.name === name);
-  return p ? p.in : null;
+  return (op && (op.parameters || []).find((x) => x.name === name)) || null;
+}
+
+/** Unknown schemas count as objects: when in doubt, don't judge by the name. */
+function isObjectSchema(schema) {
+  if (!schema) return true;
+  // Scalars and arrays serialize under the parameter's own name (?tag=a&tag=b).
+  if (['string', 'integer', 'number', 'boolean', 'array'].includes(schema.type)) return false;
+  return true;
 }
 
 /**

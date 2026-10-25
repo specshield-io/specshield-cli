@@ -43,6 +43,8 @@ describe('compare command surface (non-breaking baseline)', () => {
         '--usage',
         '--usage-ignore-client',
         '--usage-min-days',
+        '--usage-max-age',
+        '--usage-min-coverage',
         '--no-usage-downgrade',
       ].sort()
     );

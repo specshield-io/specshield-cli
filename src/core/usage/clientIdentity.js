@@ -58,10 +58,13 @@ function normalizeUserAgent(ua) {
   const s = ua.trim();
   if (!s) return null;
   if (/^Mozilla\//.test(s)) return 'browser';
-  const first = s.split(/\s+/)[0];
-  const m = /^([^/]+)\/(\d+)(?:\.(\d+))?/.exec(first);
-  if (m) return `${m[1]}/${m[2]}${m[3] !== undefined ? `.${m[3]}` : ''}`;
-  return first.length > 60 ? first.slice(0, 60) : first;
+  // The product is everything up to the first "/<digit>", so multi-word
+  // products survive: "Debian APT-HTTP/1.3 (…)" → "Debian APT-HTTP/1.3",
+  // "Chef Client/10.18.2 (…)" → "Chef Client/10.18".
+  const m = /^([^/();]{1,60}?)\/v?(\d+)(?:\.(\d+))?/.exec(s);
+  if (m) return `${m[1].trim()}/${m[2]}${m[3] !== undefined ? `.${m[3]}` : ''}`;
+  const name = s.split('(')[0].replace(/[\s;,]+$/, '') || s;
+  return name.length > 60 ? name.slice(0, 60) : name;
 }
 
 module.exports = { parseClientSpec, clientIdOf, normalizeUserAgent };

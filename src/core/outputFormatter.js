@@ -117,6 +117,7 @@ function formatUsageHeader(u) {
     `  Usage: ${u.file} · ${u.window.from ? `${day(u.window.from)} → ${day(u.window.to)}` : 'no timestamps'}` +
     (span !== null ? ` (${span} days)` : '') +
     ` · ${plural(u.matchedCalls, 'call')} · ${plural(u.clients, 'client')}` +
+    (u.operationsTotal ? ` · ${u.operationsSeen}/${u.operationsTotal} operations seen` : '') +
     (u.ignoredCalls ? ` · ${fmt(u.ignoredCalls)} ignored` : '')));
   if (!u.downgrade.enabled && u.downgrade.reason !== 'disabled by --no-usage-downgrade') {
     lines.push(chalk.yellow(`  Unused breaking changes still fail the build: ${u.downgrade.reason}.`));

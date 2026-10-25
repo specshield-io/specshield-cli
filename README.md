@@ -290,6 +290,11 @@ specshield usage import /var/log/nginx/access.log* --spec api/openapi.yaml
   (base paths from `servers` / `basePath`, or `--base-path`). Without it, IDs are guessed.
 - Add more days later with `--append` (a file imported twice is detected and skipped);
   limit the window with `--since 30d`.
+- **One load balancer, several APIs?** ALB and JSON logs record the host; pass
+  `--host api.example.com` (repeatable, `*.example.com` globs) so another API's traffic
+  doesn't count as usage of this one. The import warns when it sees mixed hosts.
+- **Import logs from every server.** If several instances each write their own log,
+  import all of them — logs from one node make the others' clients look like non-users.
 
 **2. Compare with impact:**
 
@@ -304,9 +309,13 @@ specshield compare base.yaml target.yaml --usage usage.json --fail-on-breaking
   *send* it; a parameter that became required affects only clients that *omit* it.
 - **Zero calls → "breaking but unused"**: listed separately and excluded from
   `--fail-on-breaking`. SpecShield only does this when the evidence is good enough — at
-  least `--usage-min-days` (default 7) of logs, the newest no older than 30 days, and calls
-  that actually match the base spec. Otherwise the change stays breaking and the report
-  says why. `--no-usage-downgrade` keeps everything breaking and only annotates.
+  least `--usage-min-days` (default 7) of logs, the newest no older than `--usage-max-age`
+  (default 30) days, calls that match the base spec, and at least `--usage-min-coverage`
+  (default 25) percent of the spec's operations seen in the logs — fewer usually means the
+  logs are filtered, sampled or from one server of several. Otherwise the change stays
+  breaking and the report says why. `--no-usage-downgrade` keeps everything breaking.
+- Object-typed query parameters (e.g. a Spring `@ModelAttribute` DTO) are sent as their
+  properties, not under their own name, so they're judged by who calls the endpoint.
 - Leave health checks and bots out: `--usage-ignore-client 'kube-probe/*' --usage-ignore-client healthcheck`.
 - `--json` adds `impact` to each change, plus `unusedBreakingChanges`, `summary.unusedBreaking`
   and a `usage` block. Without `--usage` the JSON is unchanged.
@@ -1275,6 +1284,8 @@ ignore:
 #   file: usage.json
 #   ignoreClients: ["kube-probe/*"]
 #   minDays: 7
+#   maxAgeDays: 30
+#   minCoverage: 25
 #   downgrade: true
 
 # Hosted compare (set --remote on the CLI to override).
@@ -1337,6 +1348,8 @@ specshield compare <base> <target> [options]
 | `--usage <file>` | `usage.json` from `specshield usage import` — show which clients each breaking change affects |
 | `--usage-ignore-client <pattern>` | Leave a client out of the impact (repeatable; `*` globs, otherwise substring) |
 | `--usage-min-days <n>` | Days of usage needed before an unused breaking change stops failing the build (default `7`) |
+| `--usage-max-age <days>` | The newest log line may be at most this old for unused changes to pass (default `30`) |
+| `--usage-min-coverage <pct>` | Percent of spec operations that must appear in the logs for unused changes to pass (default `25`) |
 | `--no-usage-downgrade` | Annotate impact only; keep unused breaking changes breaking |
 | `--timeout <ms>` | Request timeout for remote mode (default `10000`) |
 
