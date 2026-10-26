@@ -1,5 +1,33 @@
 # SpecShield CLI changelog
 
+## Unreleased — a gate teams can leave blocking: `specshield gate`
+
+### Added
+
+- **`specshield gate [spec]`** — the CI check. Compares the spec with the merge base of
+  the branch (never the base branch's tip or production), so changes merged since the
+  branch forked never fail an unrelated PR. Baseline from the CI event: GitHub
+  `pull_request`, `merge_group` (merge queue base), `push`; GitLab MR; Bitbucket PR;
+  else `origin`'s default branch; `--base` overrides. Shallow checkouts are fetched and
+  deepened as needed (`--no-fetch` to forbid). Writes a GitHub job summary and annotations.
+- **Waivers** in `.specshield/waivers.yml`: change type, optional operation/field, and a
+  required owner, reason and expiry (≤ 90 days, `gate.maxWaiverDays`). Expired waivers stop
+  applying and say whose lapsed; invalid ones never apply; a waiver added in the PR that
+  matches nothing is flagged. `specshield waivers add` / `specshield waivers [list] [--check]`.
+  The legacy `ignore:` list still applies, and the gate says how to move it to a waiver.
+- **Shadow mode** (`--shadow`, `gate.mode: shadow`): report what would have been blocked,
+  exit 0. `--upload` records each run for the dashboard's graduation report and prints its
+  headline ("Would have blocked 3 PRs — all 3 were real breaks. Safe to turn on blocking.").
+- `gate.*` keys in `.specshield.yml`; `--usage` works as in `compare`.
+
+### Tested on real data
+
+- Redocly/museum-openapi-example PR #18 (open, far behind `main`), depth-1 checkout from
+  GitHub: comparing with `main`'s tip reports 14 breaking changes, all from commits merged
+  after the branch forked; the gate found the merge base (the PR's original base) over
+  HTTPS in ~1 s and reported 0.
+
+
 ## Unreleased — break → fix: `specshield fix`
 
 ### Added

@@ -42,7 +42,7 @@ What the CLI does:
 - [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
 
 **Commands — local & hosted compare**
-- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
+- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [**CI gate: `specshield gate`**](#a-gate-you-can-leave-blocking-specshield-gate) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
 **Governance — lint & gate**
 - [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
@@ -516,6 +516,68 @@ specshield fix base.yaml target.yaml --spring src/main/java --package com.acme.p
 - Tested by compiling the generated code into a Spring Boot app and calling it as an old
   and a new client (`test-harness/spring-compat/verify.sh`), on Spring Boot 3.2 and 3.5.
 
+## A gate you can leave blocking: `specshield gate`
+
+`compare` diffs two files you choose. `gate` is the CI check: it decides **which** spec a change is judged against, which breaks the team has accepted, and whether failing is safe yet.
+
+```bash
+specshield gate openapi.yaml            # in CI, or locally on your branch
+```
+
+**Right baseline, automatically.** The spec is compared with the commit your branch started from (the merge base), never with the base branch's current tip and never with what's deployed. Against the tip, a branch that is behind sees every change merged since it forked as "removed", and a break that already landed fails every unrelated PR until someone notices — the fastest way for a gate to lose the team's trust. The baseline comes from the CI event:
+
+| Where | Baseline |
+|---|---|
+| GitHub `pull_request` | merge base of the PR's base commit and HEAD |
+| GitHub `merge_group` (merge queue) | the queue's base, so each PR is judged only on its own change |
+| GitHub `push` | the commit before the push |
+| GitLab merge request | `CI_MERGE_REQUEST_DIFF_BASE_SHA` |
+| Bitbucket PR / anywhere else | merge base with the destination / `origin`'s default branch |
+
+`--base <ref>` overrides it. CI checkouts are usually shallow: the gate fetches the base commit and deepens history until the merge base is reachable (`--no-fetch` to forbid that, or use `fetch-depth: 0`). A PR that doesn't touch the spec passes without a diff.
+
+**Waivers with an owner, a reason and an expiry.** Accepted breaks live in `.specshield/waivers.yml`, committed with the change they accept so the waiver is reviewed in the same PR:
+
+```bash
+specshield waivers add response-field-removed --operation "GET /pets/{id}" --field legacy_id \
+  --owner @alice --reason "Mobile 4.2+ stopped reading it; older builds unsupported" --days 30 --ticket PET-12
+specshield waivers            # list: owner, reason, days left; --check exits 1 on expired/invalid ones
+```
+
+```yaml
+waivers:
+  - change: response-field-removed     # change type; "*" = any type on `operation`
+    operation: GET /pets/{id}          # optional; "*" / "**" globs, "/pets/**" = any method
+    field: legacy_id                   # optional; name or dotted suffix
+    owner: "@alice"
+    reason: Mobile 4.2+ stopped reading it; older builds unsupported
+    created: "2026-10-27"
+    expires: "2026-11-26"              # at most 90 days out (gate.maxWaiverDays)
+    ticket: PET-12
+```
+
+Owner, reason (10+ characters) and expiry are required; a waiver missing one never applies. A waiver with an `operation` must cover **every** endpoint the change affects. After the expiry day the change blocks again and the output says whose waiver lapsed. Without `operation`/`field` a waiver covers every change of that type — a policy decision the expiry forces someone to revisit. The legacy `ignore:` list still works, but the gate reports what it skipped and how to move it to a waiver. The SpecShield GitHub App reads the same file with the same rules.
+
+**Shadow mode, then graduate.** `--shadow` (or `gate.mode: shadow`) reports what the gate would have blocked and always exits 0. Add `--upload` (Team plan) and each run lands on **Dashboard → Gate Readiness**, which shows after two weeks: *"Would have blocked 3 PRs — all 3 were real breaks. Safe to turn on blocking."* A PR fixed after the warning, or accepted with a waiver, counts as a real break; anything merged with an unwaived break is yours to mark *real* or *false alarm*. Any false alarm, or any failure on a PR that didn't touch the spec, keeps it from graduating.
+
+**Merge queues.** Add `merge_group` to the workflow triggers; the gate reports on the queue's commit with the queue's base as baseline.
+
+```yaml
+# .github/workflows/api-gate.yml
+on: [pull_request, merge_group]
+jobs:
+  api-gate:                                   # make this the required check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4             # shallow is fine; the gate fetches what it needs
+      - run: npx -y specshield@3 gate openapi.yaml --shadow --upload --org <org-key>
+        env: { SPECSHIELD_API_KEY: "${{ secrets.SPECSHIELD_API_KEY }}" }
+```
+
+In GitHub Actions the gate also writes a job summary and annotations (`--no-summary` to skip). With `--usage usage.json`, breaking changes no client calls stop blocking ([usage-aware compare](#who-does-a-change-break--usage-aware-compare)). Exit codes: `1` when something blocks in blocking mode, `0` otherwise, `2` on errors. `--json` prints the full result: baseline, blocking and waived changes, and waiver-file health.
+
+---
+
 ## Remote Compare
 
 Sends your specs to SpecShield's hosted diff engine. Useful for keeping the
@@ -595,18 +657,13 @@ time from the dashboard.
 
 Install once at **Dashboard → GitHub Integration**, choose your repos, done. Every PR that touches the OpenAPI spec gets:
 
-- A GitHub check run (pass/fail) visible on the PR
-- A sticky PR comment with the full diff (breaking changes highlighted)
-- Configurable `failOnBreaking` per repository
+- A GitHub check run visible on the PR, comparing the spec with the commit the branch started from (the merge base), not the base branch's moving tip
+- A sticky PR comment with the breaking changes, any waived ones, and a ready-to-paste waiver
+- Waivers read from `.specshield/waivers.yml` at the PR's head commit — the same file and rules as [`specshield gate`](#a-gate-you-can-leave-blocking-specshield-gate)
+- Merge queue support: subscribe the App to **Merge group** events and the check runs on the queue's commit too
+- **Shadow mode** for new repos: the check never fails, records what it would have blocked, and **Dashboard → Gate Readiness** tells you when it's safe to switch to blocking
 
-Configure per-repo via `.specshield.yml`:
-
-```yaml
-github:
-  specPath: api/openapi.yaml
-  failOnBreaking: true
-  commentOnPr: true
-```
+Spec path, waiver file and shadow/blocking mode are set per repository in **Dashboard → GitHub**.
 
 ---
 
@@ -1466,6 +1523,15 @@ failOnBreaking: true
 severity: error                  # info | warning | error
 ignore:
   - "DELETE /admin removed"      # match by substring; repeatable
+
+# CI gate (specshield gate; flags win).
+# gate:
+#   spec: openapi.yaml
+#   mode: shadow                   # shadow | blocking (default blocking)
+#   waivers: .specshield/waivers.yml
+#   maxWaiverDays: 90
+#   upload: true                   # record runs for the readiness report (Team)
+#   org: <org-key>
 
 # Usage-aware compare (same as --usage …; see "Who does a change break?").
 # usage:

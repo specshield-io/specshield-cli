@@ -142,6 +142,40 @@ function validateConfig(config, filePath) {
     }
   }
 
+  if (config.gate !== undefined && config.gate !== null) {
+    const g = config.gate;
+    if (typeof g !== 'object' || Array.isArray(g)) {
+      throw new Error(`Config error in "${filePath}": gate must be an object`);
+    }
+    if (g.mode !== undefined && !['blocking', 'shadow'].includes(g.mode)) {
+      throw new Error(`Config error in "${filePath}": gate.mode must be "blocking" or "shadow"`);
+    }
+    if (g.maxWaiverDays !== undefined && !(Number(g.maxWaiverDays) >= 1)) {
+      throw new Error(`Config error in "${filePath}": gate.maxWaiverDays must be a number ≥ 1`);
+    }
+    for (const key of ['spec', 'waivers', 'org']) {
+      if (g[key] !== undefined && typeof g[key] !== 'string') {
+        throw new Error(`Config error in "${filePath}": gate.${key} must be a string`);
+      }
+    }
+    if (g.upload !== undefined && typeof g.upload !== 'boolean') {
+      throw new Error(`Config error in "${filePath}": gate.upload must be a boolean`);
+    }
+    valid.gate = {
+      spec: g.spec,
+      mode: g.mode,
+      waivers: g.waivers,
+      maxWaiverDays: g.maxWaiverDays !== undefined ? Number(g.maxWaiverDays) : undefined,
+      upload: g.upload,
+      org: g.org,
+    };
+  }
+
+  // `specshield init` writes the spec path here; the gate falls back to it.
+  if (config.github && typeof config.github === 'object' && typeof config.github.specPath === 'string') {
+    valid.github = { specPath: config.github.specPath };
+  }
+
   return valid;
 }
 

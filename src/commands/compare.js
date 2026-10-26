@@ -3,7 +3,6 @@
 const { Command } = require('commander');
 const chalk = require('chalk');
 const ora = require('ora');
-const path = require('path');
 const { loadSpec } = require('../core/loadSpec');
 const { parseSpec } = require('../core/parseSpec');
 const { normalizeSpec } = require('../core/normalizeSpec');
@@ -154,38 +153,8 @@ compare
   });
 
 async function applyUsage(result, base, options) {
-  const { loadUsage } = require('../core/usage/usageStore');
-  const { applyUsageImpact } = require('../core/usage/impact');
-
-  const usage = await loadUsage(options.usage);
-  const baseSpec = parseSpec(await loadSpec(base), base);
-  const num = (value, flag, max = Infinity) => {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n < 0 || n > max) throw new Error(`${flag} must be a number from 0 to ${max}, got "${value}"`);
-    return n;
-  };
-  const minDays = num(options.usageMinDays, '--usage-min-days');
-  const maxAgeDays = num(options.usageMaxAge, '--usage-max-age');
-  const minCoverage = num(options.usageMinCoverage, '--usage-min-coverage', 100);
-
-  const { result: annotated, meta } = applyUsageImpact(result, {
-    usage,
-    baseSpec,
-    baseNorm: normalizeSpec(baseSpec),
-    file: path.basename(options.usage),
-    ignoreClients: options.usageIgnoreClient,
-    minDays,
-    maxAgeDays,
-    minCoverage,
-    downgrade: options.usageDowngrade,
-  });
-  if (!meta.trusted && meta.totalCalls > 0) {
-    logger.warn(`None of the calls in ${options.usage} match an operation in ${base}. ` +
-      'Is it the right usage file? If the API is served under a prefix, re-import with --base-path.');
-  }
-  const { annotateDeprecations } = require('../core/usage/deprecations');
-  const quietDays = num(options.usageQuietDays, '--usage-quiet-days');
-  return { ...annotateDeprecations(annotated, baseSpec, { meta, quietDays }), usage: { ...meta, quietDays } };
+  const { applyUsage: join } = require('../core/usage/applyUsage');
+  return join(result, parseSpec(await loadSpec(base), base), options, base);
 }
 
 async function runLocalComparison(base, target, options, spinner) {
