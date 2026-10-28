@@ -1,8 +1,10 @@
 # SpecShield CLI changelog
 
-## Unreleased — a gate teams can leave blocking: `specshield gate`
+## 3.5.0 — 2026-10-29 — gate, fix, safe removal
 
-### Added
+### A gate teams can leave blocking: `specshield gate`
+
+#### Added
 
 - **`specshield gate [spec]`** — the CI check. Compares the spec with the merge base of
   the branch (never the base branch's tip or production), so changes merged since the
@@ -20,7 +22,7 @@
   headline ("Would have blocked 3 PRs — all 3 were real breaks. Safe to turn on blocking.").
 - `gate.*` keys in `.specshield.yml`; `--usage` works as in `compare`.
 
-### Tested on real data
+#### Tested on real data
 
 - Redocly/museum-openapi-example PR #18 (open, far behind `main`), depth-1 checkout from
   GitHub: comparing with `main`'s tip reports 14 breaking changes, all from commits merged
@@ -28,9 +30,9 @@
   HTTPS in ~1 s and reported 0.
 
 
-## Unreleased — break → fix: `specshield fix`
+### Break → fix: `specshield fix`
 
-### Added
+#### Added
 
 - **`specshield fix <base> <target>`** writes the non-breaking version of a breaking
   change as minimal edits to the target spec (comments and layout kept): renamed fields
@@ -46,7 +48,7 @@
 - `compare` points at `specshield fix` when it finds breaking changes.
 - `specshield deprecations` also honours `x-deprecated: true` (Swagger 2.0 schemas).
 
-### Tested on real data
+#### Tested on real data
 
 - Kubernetes `swagger.json` v1.37.1 → master: 552 breaking changes, all fixed and verified
   (7 s); an independent `compare` of v1.37.1 against the fixed spec reports 0.
@@ -57,9 +59,9 @@
   between single-value constants of `oneOf` variants that moved. A format-only change
   (`integer` → `int64`) no longer suggests a new field.
 
-## Unreleased — safe removal: deprecate → watch traffic drain → remove
+### Safe removal: deprecate → watch traffic drain → remove
 
-### Added
+#### Added
 
 - **`specshield deprecations <spec> --usage usage.json`** lists everything the spec marks
   `deprecated: true` (or gives an `x-sunset` date) — operations, parameters, request and
@@ -76,7 +78,7 @@
 - `usage import` records calls per week per client and when each query parameter was last
   sent (additive `weeks` / `paramsLastSeen` in usage.json; older files still load).
 
-### Tested on real data
+#### Tested on real data
 
 Kubernetes' published CI audit log (106,445 requests) against the official
 `swagger.json`, with the upstream deprecations marked (the `v1 Endpoints` API, deprecated
