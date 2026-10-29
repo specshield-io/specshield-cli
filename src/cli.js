@@ -16,6 +16,8 @@ const deprecationsCommand = require('./commands/deprecations');
 const fixCommand = require('./commands/fix');
 const gateCommand = require('./commands/gate');
 const waiversCommand = require('./commands/waivers');
+const proveCommand = require('./commands/prove');
+const replayCommand = require('./commands/replay');
 
 const program = new Command();
 
@@ -42,6 +44,8 @@ program.addCommand(deprecationsCommand);
 program.addCommand(fixCommand);
 program.addCommand(gateCommand);
 program.addCommand(waiversCommand);
+program.addCommand(proveCommand);
+program.addCommand(replayCommand);
 
 program.parseAsync(process.argv).catch((err) => {
   const logger = require('./utils/logger');

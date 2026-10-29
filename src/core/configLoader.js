@@ -158,8 +158,10 @@ function validateConfig(config, filePath) {
         throw new Error(`Config error in "${filePath}": gate.${key} must be a string`);
       }
     }
-    if (g.upload !== undefined && typeof g.upload !== 'boolean') {
-      throw new Error(`Config error in "${filePath}": gate.upload must be a boolean`);
+    for (const key of ['upload', 'prove']) {
+      if (g[key] !== undefined && typeof g[key] !== 'boolean') {
+        throw new Error(`Config error in "${filePath}": gate.${key} must be a boolean`);
+      }
     }
     valid.gate = {
       spec: g.spec,
@@ -167,6 +169,7 @@ function validateConfig(config, filePath) {
       waivers: g.waivers,
       maxWaiverDays: g.maxWaiverDays !== undefined ? Number(g.maxWaiverDays) : undefined,
       upload: g.upload,
+      prove: g.prove,
       org: g.org,
     };
   }

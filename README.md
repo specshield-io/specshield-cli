@@ -42,7 +42,7 @@ What the CLI does:
 - [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
 
 **Commands — local & hosted compare**
-- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [**CI gate: `specshield gate`**](#a-gate-you-can-leave-blocking-specshield-gate) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
+- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [**CI gate: `specshield gate`**](#a-gate-you-can-leave-blocking-specshield-gate) · [**Proof: `prove` & `replay`**](#proof-not-opinion-specshield-prove-and-specshield-replay) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
 **Governance — lint & gate**
 - [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
@@ -575,6 +575,99 @@ jobs:
 ```
 
 In GitHub Actions the gate also writes a job summary and annotations (`--no-summary` to skip). With `--usage usage.json`, breaking changes no client calls stop blocking ([usage-aware compare](#who-does-a-change-break--usage-aware-compare)). Exit codes: `1` when something blocks in blocking mode, `0` otherwise, `2` on errors. `--json` prints the full result: baseline, blocking and waived changes, and waiver-file health.
+
+---
+
+## Proof, not opinion: `specshield prove` and `specshield replay`
+
+A diff says *"breaking change"*. A reviewer asks *"does it actually break anything?"* — and a gate that can't answer gets overruled. `prove` answers with the exact request that worked before and fails now; `replay` answers with real traffic.
+
+```bash
+specshield prove openapi-v1.yaml openapi-v2.yaml
+```
+
+```
+  PROOF  Field "requestBody.channel" was added to POST /payments (required)
+      worked before         POST /payments {"amount":1.5,"currency":"USD","customerId":"cus_1"}
+      fails now             body is missing required field "channel"
+      reproduce             curl -X POST "$BASE_URL/payments" -H 'Content-Type: application/json' -d '{"amount":1.5,…}'
+
+  PROOF  Response field "amount" changed type — 3 endpoints: GET /payments, POST /payments, GET /payments/{paymentId}
+      request               GET /payments/PAY-1
+      new spec allows       {"paymentId":"abc","amount":"abc","currency":"abc","status":"abc"} (200)
+      old clients reject it response.amount must be number
+
+  COMPATIBLE  Field "responses.200.message" became required in PATCH /budgets/{id}
+      Everything the new schema lets the server send here, the old schema accepted too (checked schema against schema), so old clients can't break on this change.
+```
+
+**How a proof is made.** For each breaking change, `prove` generates values the old contract accepts at the changed location — enum values, boundaries just past the new limits, strings matching the old pattern, every `oneOf` branch, leaving the field out — builds a whole request around each, and validates it with ajv against **both** full specs. A *request* witness is accepted by the old spec and rejected by the new one; a *response* witness is a body the new spec lets the server send that a client built on the old spec rejects.
+
+Two rules keep proofs honest:
+
+- **Isolation.** Every other part of the witness is repaired until both specs accept it, so it fails for this change alone — not for the three other changes in the same release. Where no value can satisfy both (a field that went from integer to string next door), the conflict is listed separately as *also*.
+- **A control.** Each request witness ships with its control: the same request with only the changed value swapped for one the new spec accepts. When the control passes, the change is provably the cause.
+
+Every change gets one of four results:
+
+| Result | Meaning |
+|---|---|
+| **PROOF** | A witness, validated against both specs as above |
+| **EXAMPLE** | The change is real but schemas can't reject anything — a removed optional response field, a parameter the server will now ignore. Shown as a concrete before/after |
+| **COMPATIBLE** | No witness exists, and a structural argument says why: the new schema accepts everything the old one did (a sound subschema check), only a numeric format changed, `oneOf` branches were reordered, the change only narrows what a server sends |
+| **NO PROOF** | No witness found; the reason says why (a removed status code has no payload to show) |
+
+**Against a running build.** `--against http://localhost:8080` sends every witness to the new build and reports what it does: *confirmed* (rejected, while the control got a 2xx), *not reproduced* (the build still accepts it — the spec and the code disagree), *inconclusive* (both rejected: credentials or test data, not the change). Only `GET`/`HEAD`/`OPTIONS` are sent unless you pass `--include-mutating`; only local and private hosts are allowed unless you pass `--allow-remote`; `--header "Authorization: Bearer $TOKEN"` adds credentials.
+
+```bash
+specshield prove v1.yaml v2.yaml --against http://localhost:8080 --include-mutating
+#   On http://localhost:8080: 6 confirmed
+#   … on the build   ✔ confirmed — HTTP 400: rejected, while the same request valid under the new spec got HTTP 201
+```
+
+**In the gate.** `specshield gate --prove` (or `gate.prove: true`) attaches the proof to every blocking change — in the terminal, and as a collapsible *Proof* section with the request, the reason and a `curl` command in the GitHub job summary.
+
+### Replay real traffic: `specshield replay`
+
+Synthetic witnesses show what *can* break; replay shows what *does*, for the requests your clients actually send.
+
+```bash
+# Side by side: the old build and the new one, same data — the strongest comparison
+specshield replay --from traffic.har --against http://localhost:8082 --baseline http://localhost:8081 --spec v2.yaml
+
+# Access logs (nginx/Apache, ALB, JSON lines; .gz ok) record no bodies: use the old spec as the oracle
+specshield replay --from access.log --against http://localhost:8082 --old-spec v1.yaml
+```
+
+```
+  ✖ 10 requests that worked before break on the new build
+  ✔ 1 ok   ✖ 2 broken   ▲ 8 changed
+
+  POST /payments  2 replayed · 2 broken
+    ✖ POST /payments
+        worked before (HTTP 201), fails now (HTTP 400)
+  GET /payments/{paymentId}  5 replayed · 4 changed
+    ▲ GET /payments/PAY-1
+        missing receiptUrl; amount number → string
+```
+
+- **Sampling.** Up to `--per-operation` requests (default 5) from every operation, `--sample` (default 200) in total, taken round-robin so rare operations survive the cut. Reservoir sampling with a `--seed`: the same seed replays the same requests.
+- **What is compared.** With `--baseline <old build>`, each request goes to both builds — only the code differs. Without it, the recorded HAR response is the reference, and a `404` is *inconclusive* (missing test data explains it as well as a removed route). Response shapes are compared, not values: a field the old response had and the new one lacks, or a type that changed, is *changed*; different data is not. `--old-spec` checks every response against the old contract; `--spec` groups traffic by operation, spots removed routes and flags responses that don't match the new spec.
+- **Safe by default.** Writes are replayed only with `--include-mutating`, and never from access logs (they don't record bodies). Captured credentials — `Authorization`, cookies, anything named like a key or token — are never replayed; pass your own with `--header`. Query values are hidden in the report unless `--show-values`. Only local and private hosts without `--allow-remote`.
+
+Exit codes for both: `1` when something breaks (`prove`: breaking changes, as `compare`; `replay`: a request that worked before fails now), `0` otherwise, `2` on errors. `--json` prints everything, including each witness, its control and, with `--against`, what the build did.
+
+**Tested on real data.**
+
+| Spec pair | Findings | Proven | Example | Compatible | No proof | Time |
+|---|---|---|---|---|---|---|
+| GitHub REST API, Apr → Oct 2026 | 112 | 35 | 11 | 41 | 25 | 1.1 s |
+| Stripe API, Mar → Sep 2026 (form bodies) | 112 | 89 | 19 | 0 | 4 | 16 s |
+| Kubernetes (Swagger 2.0), Jul → Oct 2026 | 103 | 58 | 0 | 0 | 45 | 2.6 s |
+
+Every proof was isolated to its own change. The *compatible* findings on GitHub are rule branches GitHub reordered inside a `oneOf` (the engine compares branches by position), numeric formats that only widened, and response fields that became required. *No proof* is almost entirely removed status codes and removed shared schemas, which are proven through the endpoints that used them. On Kubernetes, 384 of the per-endpoint "field became required" findings sit on responses and are shown compatible, while the same fields on requests are proven. Against a Spring Boot service whose old and new builds ran side by side, all 6 proofs were confirmed on the new build. All 6 were *not reproduced* on a build whose code hadn't changed.
+
+**Limits.** Witnesses are built for JSON and form bodies. The subschema check assumes a closed world — clients send only fields the spec documents — which is what every compatibility check assumes; it is sound (a *compatible* verdict holds for every instance) but incomplete: regex inclusion, `not` and `if/then` are reported as *no proof* rather than guessed. Pattern strings are generated for the regex features API specs use; lookarounds and backreferences are skipped.
 
 ---
 
@@ -1706,7 +1799,7 @@ Per-subcommand flags:
 | Code | Meaning |
 |---|---|
 | `0` | Clean — no breaking changes / deployable / all probes pass |
-| `1` | Breaking changes found / not deployable / one or more probes failed |
+| `1` | Breaking changes found / not deployable / one or more probes failed / a replayed request that worked before fails now |
 | `2` | Config error, missing token, or runtime error |
 
 ---

@@ -10,6 +10,7 @@ const { classifyChanges } = require('../classifyChanges');
 const { resolveBaseline } = require('./baseline');
 const G = require('./git');
 const W = require('./waivers');
+const P = require('../prove');
 
 /**
  * One gate run: the spec at the merge base vs the spec in the working tree,
@@ -23,7 +24,7 @@ async function runGate(opts) {
   const {
     spec, cwd = process.cwd(), base, env = process.env, fetch = true,
     mode = 'blocking', waiversFile = W.DEFAULT_FILE, maxWaiverDays = W.DEFAULT_MAX_DAYS,
-    ignore = [], usage = null, now = Date.now(),
+    ignore = [], usage = null, now = Date.now(), prove = false,
   } = opts;
   if (!['blocking', 'shadow'].includes(mode)) throw new Error(`mode must be "blocking" or "shadow", got "${mode}"`);
 
@@ -69,11 +70,13 @@ async function runGate(opts) {
   try { baseW = baseWText ? W.parseWaivers(baseWText, wOpts).waivers : []; } catch { /* the baseline's file may predate today's rules */ }
 
   let breaking = [];
+  let docs = null;
   if (out.specStatus === 'deleted') {
     breaking = [{ type: 'SPEC_REMOVED', path: null, method: null, field: null, severity: 'error', description: `The spec ${specRel} was deleted` }];
   } else if (out.specStatus === 'changed') {
     const baseDoc = parseSpec(baseText, specRel);
     const headDoc = parseSpec(headText, specRel);
+    docs = { baseDoc, headDoc };
     let result = classifyChanges(diffSpecs(normalizeSpec(baseDoc), normalizeSpec(headDoc)));
     out.nonBreaking = result.additions.length + result.modifications.length + result.warnings.length;
     if (ignore.length) {
@@ -91,6 +94,12 @@ async function runGate(opts) {
   }
 
   out.breaking = breaking.map(withKey);
+  if (prove && docs) {
+    // A proof per finding: the request that worked at the baseline and fails now.
+    const proofs = P.witnesses(docs.baseDoc, docs.headDoc);
+    out.breaking = out.breaking.map((c) => ({ ...c, proof: P.proofFor(c, proofs) }));
+    out.proofs = P.summarize(out.breaking);
+  }
   const { blocking, waived, used } = W.applyWaivers(out.breaking, headW.waivers, now);
   out.blocking = blocking;
   out.waived = waived;

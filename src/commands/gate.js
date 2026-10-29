@@ -10,6 +10,7 @@ const { usageOptions } = require('../core/usage/applyUsage');
 const W = require('../core/gate/waivers');
 const G = require('../core/gate/git');
 const { plural } = require('../core/usage/format');
+const R = require('../core/prove/render');
 const { uploadGateRun } = require('../api/bdctClient');
 const { getStoredApiKey } = require('../config/localConfig');
 const logger = require('../utils/logger');
@@ -25,6 +26,7 @@ const gate = new Command('gate')
   .option('--max-waiver-days <n>', `Longest a waiver may run before it must be renewed (default: ${W.DEFAULT_MAX_DAYS})`)
   .option('--no-fetch', 'Never run git fetch, even when the baseline commit is missing from a shallow clone')
   .option('--usage <file>', 'usage.json from "specshield usage import" — breaking changes no client uses stop blocking')
+  .option('--prove', 'Attach a proof to every breaking change: the request that worked at the baseline and fails now')
   .option('--no-summary', 'Skip the GitHub Actions job summary and annotations')
   .option('--upload', 'Record this run on your SpecShield dashboard, for the shadow-mode graduation report (Team plan)')
   .option('--org <key>', 'Org key for --upload (default: gate.org or bdct.org in .specshield.yml)')
@@ -50,6 +52,7 @@ const gate = new Command('gate')
         maxWaiverDays,
         ignore: config.ignore || [],
         usage: usage.usage ? usage : null,
+        prove: Boolean(opts.prove || g.prove),
       });
 
       if (opts.upload || g.upload) r.upload = await upload(r, { ...opts, org: opts.org || g.org });
@@ -180,6 +183,7 @@ function render(r) {
       if (c.expiredWaiver) {
         lines.push(chalk.yellow(`      waiver expired ${c.expiredWaiver.expires} (owner ${c.expiredWaiver.owner}) — renew it or fix the change`));
       }
+      if (c.proof) lines.push(...R.lines(c.proof, { pad: '      ' }));
       lines.push(chalk.gray(`      intended? ${waiveCommand(c, r.waivers.file)}`));
     }
   }
@@ -277,6 +281,15 @@ function markdown(r) {
     for (const c of r.blocking) {
       const { where, what } = label(c);
       md.push(`| ${cell(what)} | ${cell(where || '—')} | ${c.expiredWaiver ? `waiver expired ${c.expiredWaiver.expires}` : ''} |`);
+    }
+    const proven = r.blocking.filter((c) => c.proof && (c.proof.status === 'proven' || c.proof.status === 'example'));
+    if (proven.length) {
+      md.push('');
+      md.push(`<details><summary>Proof for ${plural(proven.length, 'change')}</summary>`);
+      for (const c of proven) {
+        md.push('', `#### ${cell(label(c).what)}`, '', R.markdown(c.proof));
+      }
+      md.push('', '</details>');
     }
     md.push('');
     md.push(`Intended? Add a waiver with an owner, a reason and an expiry: \`${waiveCommand(r.blocking[0], r.waivers.file)}\``);

@@ -1,5 +1,60 @@
 # SpecShield CLI changelog
 
+## Unreleased — proof, not opinion: `specshield prove` and `specshield replay`
+
+### Added
+
+- **`specshield prove <base> <target>`**: for every breaking change, the exact request that
+  worked before and fails now. For a response change, it gives a body the new spec allows that
+  clients of the old spec reject.
+  - **How a witness is found.** Candidate values for the changed location are enums, bounds just
+    past the new limits, pattern matches, every `oneOf` branch, and absence. Each is validated
+    with ajv against both full specs.
+  - **Isolation.** The rest of the witness is repaired to satisfy both specs. Each request
+    witness carries a control that differs only at the change, which proves the cause.
+  - **Results.** Each change is one of: proven, example (real but not rejectable: a removed
+    optional field), compatible (with a structural reason), or no proof (with the reason why).
+- **A sound subschema check** behind the *compatible* verdicts. It recognizes added optional
+  properties, extended enums, relaxed bounds, widened types and numeric formats, and `oneOf`
+  branches the engine reports as changed only because they were reordered.
+  - Recursive schemas are compared coinductively.
+  - It assumes a closed world (clients send only documented fields).
+- **`prove --against <url>`** sends every witness to a running build and reports what it does.
+  - *confirmed*: the witness is rejected while its control is accepted.
+  - *not reproduced*: the build still accepts it, so the spec and the code disagree.
+  - *inconclusive*: credentials or test data, not the change.
+  - Writes are sent only with `--include-mutating`; remote hosts only with `--allow-remote`.
+- **`specshield replay`** replays a seeded sample of real traffic against the new build.
+  - **Sources:** HAR files, or access logs (nginx/Apache, ALB, JSON lines).
+  - **Sampling:** stratified per operation.
+  - **References:** the old build side by side (`--baseline`), the recorded responses, or the
+    old spec as the oracle (`--old-spec`, which works from status-only access logs).
+  - **Verdicts:** broken (worked before, fails now), changed (lost fields or changed types), or
+    inconclusive (auth, throttling, a 404 that missing test data could explain).
+  - **Safety:** captured credentials are never replayed, query values are hidden unless
+    `--show-values`, and writes are never rebuilt from body-less logs.
+- **`gate --prove`** (also `gate.prove: true` in `.specshield.yml`) attaches the proof to every
+  blocking finding, in the terminal and as a collapsible *Proof* section in the GitHub job summary.
+- Form-encoded request bodies (OpenAPI 3 `application/x-www-form-urlencoded`, Swagger 2.0
+  `formData`) are proven on their parsed values and sent bracket-encoded.
+
+### Tested on real data
+
+- **GitHub REST API**, Apr → Oct 2026, 112 findings: 35 proven, 11 by example, 41 compatible
+  (reordered `oneOf` rule branches, widened numeric formats, narrowed responses), 25 without
+  proof (removed status codes and shared schemas). 1.1 s.
+- **Stripe**, Mar → Sep 2026, 112 findings: 89 proven, 19 by example, 4 without proof. Its
+  1,972 per-endpoint changes ran in 16 s, after two fixes:
+  - spec components are now registered with ajv once, instead of recompiled per schema;
+  - the subschema check now compares lazily with memoization, instead of inlining.
+- **Kubernetes** (Swagger 2.0), Jul → Oct 2026, 103 findings: 58 proven. 384 per-endpoint
+  "field became required" findings on responses are shown compatible.
+- Every proof on all three was isolated to its own change.
+- **A Spring Boot service**, old and new builds side by side: all 6 proofs confirmed on the new
+  build, and all 6 *not reproduced* on a build whose code hadn't changed. Replay from a HAR,
+  and from an nginx log with `--old-spec`, found the removed field, the type change and the
+  rejected writes.
+
 ## 3.5.0 — 2026-10-29 — gate, fix, safe removal
 
 ### A gate teams can leave blocking: `specshield gate`

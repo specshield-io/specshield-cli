@@ -291,6 +291,16 @@ describe('runGate', () => {
     expect((await run({ mode: 'shadow' })).verdict).toBe('would-block');
   });
 
+  test('--prove attaches the proof to each finding, against the merge base', async () => {
+    const r = await run({ prove: true });
+    const p = r.blocking[0].proof;
+    expect(p).toMatchObject({ side: 'response', expect: 'response', endpoints: 2 });
+    expect(['proven', 'example']).toContain(p.status);
+    expect(p.request.path).toBe('/pets');
+    expect(r.proofs).toMatchObject({ total: 1 });
+    expect((await run()).blocking[0].proof).toBeUndefined();
+  });
+
   test('a waiver in the working tree accepts the change; one added here that matches nothing is flagged', async () => {
     write(s.work, '.specshield/waivers.yml', WAIVER(`  - change: endpoint-removed
     operation: DELETE /pets/{id}
@@ -395,6 +405,15 @@ describe('specshield gate / waivers (CLI)', () => {
     expect(sh.stdout).toMatch(/Shadow mode: would have blocked this change/);
     expect(cli(['gate', 'missing.yaml']).status).toBe(2);
     expect(cli(['gate']).stderr + cli(['gate']).stdout).toMatch(/Which spec\?/);
+  });
+
+  test('--prove prints the proof and adds it to the job summary', () => {
+    const summary = path.join(s.root, 'summary.md');
+    const r = cli(['gate', 'openapi.yaml', '--prove'], { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toMatch(/new spec sends +\[0\] without "legacy_id"/);
+    expect(r.stdout).toMatch(/reproduce +curl "\$BASE_URL\/pets"/);
+    expect(fs.readFileSync(summary, 'utf8')).toMatch(/<details><summary>Proof for 1 change<\/summary>/);
   });
 
   test('gate settings come from .specshield.yml', () => {
