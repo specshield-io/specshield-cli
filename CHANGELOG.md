@@ -1,5 +1,11 @@
 # SpecShield CLI changelog
 
+## Unreleased — security regressions in the gate
+
+### Added
+
+- `specshield gate --security` (or `gate.security: true`) blocks removed or weakened authentication, dropped OAuth scopes, new endpoints with forgotten auth, and newly exposed credentials or regulated data. Lower-risk changes are reported for review. Off by default. Findings use the existing shadow mode and waivers.
+
 ## Unreleased — proof, not opinion: `specshield prove` and `specshield replay`
 
 ### Added

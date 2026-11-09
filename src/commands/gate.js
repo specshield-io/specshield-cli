@@ -27,6 +27,7 @@ const gate = new Command('gate')
   .option('--no-fetch', 'Never run git fetch, even when the baseline commit is missing from a shallow clone')
   .option('--usage <file>', 'usage.json from "specshield usage import" — breaking changes no client uses stop blocking')
   .option('--prove', 'Attach a proof to every breaking change: the request that worked at the baseline and fails now')
+  .option('--security', 'Also block security regressions: authentication removed or weakened, scopes dropped, sensitive fields newly exposed')
   .option('--no-summary', 'Skip the GitHub Actions job summary and annotations')
   .option('--upload', 'Record this run on your SpecShield dashboard, for the shadow-mode graduation report (Team plan)')
   .option('--org <key>', 'Org key for --upload (default: gate.org or bdct.org in .specshield.yml)')
@@ -53,6 +54,7 @@ const gate = new Command('gate')
         ignore: config.ignore || [],
         usage: usage.usage ? usage : null,
         prove: Boolean(opts.prove || g.prove),
+        security: Boolean(opts.security || g.security),
       });
 
       if (opts.upload || g.upload) r.upload = await upload(r, { ...opts, org: opts.org || g.org });
@@ -151,6 +153,9 @@ function label(c) {
   return { where, what };
 }
 
+const isSecurity = (c) => c.category === 'security';
+const noun = (list) => (list.every(isSecurity) ? 'security regression' : list.some(isSecurity) ? 'blocking change' : 'breaking change');
+
 function render(r) {
   const lines = [''];
   lines.push(chalk.bold(`  SpecShield™ Gate — ${r.spec}`));
@@ -172,8 +177,8 @@ function render(r) {
       (r.nonBreaking ? chalk.gray(` · ${plural(r.nonBreaking, 'non-breaking change')}`) : ''));
   } else {
     const head = r.verdict === 'would-block'
-      ? chalk.yellow.bold(`  ▲ Shadow mode: would have blocked this change — ${plural(r.blocking.length, 'breaking change')}`)
-      : chalk.red.bold(`  ✖ ${plural(r.blocking.length, 'breaking change')} block${r.blocking.length === 1 ? 's' : ''} this change`);
+      ? chalk.yellow.bold(`  ▲ Shadow mode: would have blocked this change — ${plural(r.blocking.length, noun(r.blocking))}`)
+      : chalk.red.bold(`  ✖ ${plural(r.blocking.length, noun(r.blocking))} block${r.blocking.length === 1 ? 's' : ''} this change`);
     lines.push(head);
     for (const c of r.blocking) {
       const { where, what } = label(c);
@@ -185,6 +190,15 @@ function render(r) {
       }
       if (c.proof) lines.push(...R.lines(c.proof, { pad: '      ' }));
       lines.push(chalk.gray(`      intended? ${waiveCommand(c, r.waivers.file)}`));
+    }
+  }
+
+  if (r.security && r.security.warnings.length) {
+    lines.push('');
+    lines.push(chalk.bold(`  Security review (${r.security.warnings.length}, not blocking)`));
+    for (const c of r.security.warnings) {
+      const { where, what } = label(c);
+      lines.push(`  ${chalk.yellow('▲')} ${what}${where ? chalk.gray(` · ${where}`) : ''}`);
     }
   }
 
@@ -249,7 +263,8 @@ function annotate(r) {
   const file = `file=${escProp(r.spec)}`;
   for (const c of r.blocking) {
     const { where, what } = label(c);
-    const title = r.verdict === 'would-block' ? 'Breaking API change (shadow mode)' : 'Breaking API change';
+    const kind = isSecurity(c) ? 'API security regression' : 'Breaking API change';
+    const title = r.verdict === 'would-block' ? `${kind} (shadow mode)` : kind;
     const extra = c.expiredWaiver ? ` — waiver expired ${c.expiredWaiver.expires}` : '';
     process.stdout.write(`::${level} ${file},title=${escProp(title)}::${esc(`${what}${where ? ` (${where})` : ''}${extra}`)}\n`);
   }
@@ -273,8 +288,8 @@ function markdown(r) {
   else if (r.blocking.length === 0) md.push(`No breaking changes block this change${r.waived.length ? ` (${r.waived.length} waived)` : ''}.`);
   else {
     md.push(r.verdict === 'would-block'
-      ? `**Shadow mode:** would have blocked this change — ${plural(r.blocking.length, 'breaking change')}.`
-      : `**${plural(r.blocking.length, 'breaking change')}** block this change.`);
+      ? `**Shadow mode:** would have blocked this change — ${plural(r.blocking.length, noun(r.blocking))}.`
+      : `**${plural(r.blocking.length, noun(r.blocking))}** block this change.`);
     md.push('');
     md.push('| Change | Where | |');
     md.push('|---|---|---|');
@@ -293,6 +308,15 @@ function markdown(r) {
     }
     md.push('');
     md.push(`Intended? Add a waiver with an owner, a reason and an expiry: \`${waiveCommand(r.blocking[0], r.waivers.file)}\``);
+  }
+  if (r.security && r.security.warnings.length) {
+    md.push('');
+    md.push(`**Security review (not blocking):**`);
+    md.push('');
+    for (const c of r.security.warnings) {
+      const { where, what } = label(c);
+      md.push(`- ${cell(what)}${where ? ` — ${cell(where)}` : ''}`);
+    }
   }
   if (r.waived.length) {
     md.push('');

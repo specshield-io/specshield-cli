@@ -11,6 +11,7 @@ const { resolveBaseline } = require('./baseline');
 const G = require('./git');
 const W = require('./waivers');
 const P = require('../prove');
+const { securityDiff } = require('../security/diff');
 
 /**
  * One gate run: the spec at the merge base vs the spec in the working tree,
@@ -24,7 +25,7 @@ async function runGate(opts) {
   const {
     spec, cwd = process.cwd(), base, env = process.env, fetch = true,
     mode = 'blocking', waiversFile = W.DEFAULT_FILE, maxWaiverDays = W.DEFAULT_MAX_DAYS,
-    ignore = [], usage = null, now = Date.now(), prove = false,
+    ignore = [], usage = null, now = Date.now(), prove = false, security = false,
   } = opts;
   if (!['blocking', 'shadow'].includes(mode)) throw new Error(`mode must be "blocking" or "shadow", got "${mode}"`);
 
@@ -99,6 +100,14 @@ async function runGate(opts) {
     const proofs = P.witnesses(docs.baseDoc, docs.headDoc);
     out.breaking = out.breaking.map((c) => ({ ...c, proof: P.proofFor(c, proofs) }));
     out.proofs = P.summarize(out.breaking);
+  }
+  if (security && docs) {
+    // Not subject to usage data: an endpoint nobody calls yet can still be left open.
+    const s = securityDiff(docs.baseDoc, docs.headDoc);
+    const hit = (c) => ignore.some((p) => (c.description || '').includes(p));
+    out.ignored = [...out.ignored, ...s.breaking.filter(hit)];
+    out.breaking = [...s.breaking.filter((c) => !hit(c)).map(withKey), ...out.breaking];
+    out.security = { warnings: s.warnings.filter((c) => !hit(c)).map(withKey) };
   }
   const { blocking, waived, used } = W.applyWaivers(out.breaking, headW.waivers, now);
   out.blocking = blocking;

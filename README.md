@@ -42,7 +42,7 @@ What the CLI does:
 - [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
 
 **Commands — local & hosted compare**
-- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [**CI gate: `specshield gate`**](#a-gate-you-can-leave-blocking-specshield-gate) · [**Proof: `prove` & `replay`**](#proof-not-opinion-specshield-prove-and-specshield-replay) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
+- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [**CI gate: `specshield gate`**](#a-gate-you-can-leave-blocking-specshield-gate) · [**Proof: `prove` & `replay`**](#proof-not-opinion-specshield-prove-and-specshield-replay) · [**Security regressions: `gate --security`**](#security-regressions-in-the-gate-specshield-gate---security) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
 **Governance — lint & gate**
 - [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
@@ -577,6 +577,25 @@ jobs:
 In GitHub Actions the gate also writes a job summary and annotations (`--no-summary` to skip). With `--usage usage.json`, breaking changes no client calls stop blocking ([usage-aware compare](#who-does-a-change-break--usage-aware-compare)). Exit codes: `1` when something blocks in blocking mode, `0` otherwise, `2` on errors. `--json` prints the full result: baseline, blocking and waived changes, and waiver-file health.
 
 ---
+
+## Security regressions in the gate: `specshield gate --security`
+
+The gate also blocks a PR that makes the API less safe. Turn it on with `--security`, or `gate.security: true` in `.specshield.yml`.
+
+| Finding (waiver `change`) | Blocks? | Example |
+|---|---|---|
+| `auth-removed` | yes | An operation, or the API-wide `security`, now allows anonymous calls |
+| `auth-scope-reduced` | yes | `[refunds:write, admin]` became `[refunds:write]` |
+| `auth-weakened` | yes | Bearer became basic, an API key moved to the query string, or one required scheme was dropped |
+| `endpoint-added-without-auth` | yes | A new endpoint declares no security while others in the API do |
+| `sensitive-field-exposed` | credentials and regulated data; personal data on public endpoints | New response field `password`, `client_secret`, `cardNumber`, `ssn`; `writeOnly` dropped |
+| `sensitive-field-exposed` | no, reported for review | New `email`, `phone` or token field on an authenticated endpoint |
+| `auth-changed` | no, reported for review | Moved to a different scheme of equal strength |
+| `public-endpoint-added` | no, reported for review | A new endpoint with an explicit `security: []` |
+
+A new requirement counts as safe only when every credential that passes it would have passed the old one. Moving a requirement between global and operation level, or adding a scope, reports nothing.
+
+Findings work like every other gate finding: `--shadow` reports without failing, and a waiver needs an owner, a reason and an expiry. Usage data never hides them. This reads what the spec declares; it doesn't test what the running service enforces. Sensitive fields are matched by name and `format`, so expect the occasional miss on unusual names.
 
 ## Proof, not opinion: `specshield prove` and `specshield replay`
 
