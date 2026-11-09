@@ -41,7 +41,7 @@ function operations(doc) {
     for (const method of METHODS) {
       if (!item[method] || typeof item[method] !== 'object') continue;
       // A renamed path parameter is the same operation.
-      ops.set(`${method} ${path.replace(/\{[^}]+\}/g, '{}')}`, { path, method, op: item[method] });
+      ops.set(`${method} ${path.replace(/\{[^}]+\}/g, '{}')}`, { path, method, op: item[method], item });
     }
   }
   return ops;
@@ -152,6 +152,7 @@ function addedEndpoint(h, req, doc) {
 
 /** Specs that declare no auth anywhere say nothing about which endpoints are public. */
 function declaresAuth(doc) {
+  if ((doc.security || []).some((a) => a && Object.keys(a).length)) return true;
   return [...operations(doc).values()].some((o) => !allowsAnonymous(requirement(doc, o.op)));
 }
 
@@ -220,22 +221,23 @@ const leaf = (p) => p.split('.').pop().replace(/\[\]$/, '');
 /** Sensitive fields a 2xx response can carry, with their paths. */
 function sensitiveResponseFields(doc, op) {
   const out = [];
-  const memo = memoFor(doc);
   for (const [status, raw] of Object.entries(op.responses || {})) {
     if (!/^2/.test(status)) continue;
     const res = deref(doc, raw);
     if (!res) continue;
     const schemas = res.schema ? [res.schema] : Object.entries(res.content || {})
       .filter(([type]) => /json/i.test(type)).map(([, m]) => m && m.schema).filter(Boolean);
-    for (const s of schemas) out.push(...walk(doc, s, memo, new Set(), 0));
+    for (const s of schemas) out.push(...fields(doc, s, sensitivity, 'writeOnly'));
   }
   return out;
 }
 
 const memos = new WeakMap();
-function memoFor(doc) {
+function memoFor(doc, classify) {
   if (!memos.has(doc)) memos.set(doc, new Map());
-  return memos.get(doc);
+  const byClassifier = memos.get(doc);
+  if (!byClassifier.has(classify)) byClassifier.set(classify, new Map());
+  return byClassifier.get(classify);
 }
 
 function deref(doc, node) {
@@ -247,32 +249,38 @@ function deref(doc, node) {
   return n && typeof n === 'object' ? n : null;
 }
 
-/** [{path, tier}] relative to this schema. Named schemas are memoized; cycles are cut. */
-function walk(doc, node, memo, stack, depth) {
+/** [{path, tier}] for each property `classify(name, schema)` tags; `skip` names a flag that hides a property. */
+function fields(doc, schema, classify, skip) {
+  return walk({ doc, classify, skip, memo: memoFor(doc, classify), stack: new Set() }, schema, 0);
+}
+
+/** Named schemas are memoized; cycles are cut. */
+function walk(ctx, node, depth) {
   if (!node || depth > MAX_DEPTH) return [];
+  const { doc, memo, stack } = ctx;
   if (node.$ref) {
     if (memo.has(node.$ref)) return memo.get(node.$ref);
     if (stack.has(node.$ref)) return [];
     stack.add(node.$ref);
-    const r = walk(doc, deref(doc, node), memo, stack, depth + 1);
+    const r = walk(ctx, deref(doc, node), depth + 1);
     stack.delete(node.$ref);
     memo.set(node.$ref, r);
     return r;
   }
   const out = [];
   for (const key of ['allOf', 'oneOf', 'anyOf']) {
-    if (Array.isArray(node[key])) for (const s of node[key]) out.push(...walk(doc, s, memo, stack, depth + 1));
+    if (Array.isArray(node[key])) for (const s of node[key]) out.push(...walk(ctx, s, depth + 1));
   }
-  if (node.items) out.push(...walk(doc, node.items, memo, stack, depth + 1).map((f) => ({ ...f, path: `[].${f.path}` })));
+  if (node.items) out.push(...walk(ctx, node.items, depth + 1).map((f) => ({ ...f, path: `[].${f.path}` })));
   if (node.additionalProperties && typeof node.additionalProperties === 'object') {
-    out.push(...walk(doc, node.additionalProperties, memo, stack, depth + 1));
+    out.push(...walk(ctx, node.additionalProperties, depth + 1));
   }
   for (const [name, raw] of Object.entries(node.properties || {})) {
     const prop = deref(doc, raw);
-    if (!prop || prop.writeOnly) continue;
-    const tier = sensitivity(name, prop);
+    if (!prop || prop[ctx.skip]) continue;
+    const tier = ctx.classify(name, prop);
     if (tier) out.push({ path: name, tier });
-    out.push(...walk(doc, raw, memo, stack, depth + 1).map((f) => ({ ...f, path: `${name}.${f.path}` })));
+    out.push(...walk(ctx, raw, depth + 1).map((f) => ({ ...f, path: `${name}.${f.path}` })));
   }
   return out.map((f) => ({ ...f, path: f.path.replace(/^\[\]\./, '') }));
 }
@@ -301,4 +309,7 @@ function merge(found) {
   return out;
 }
 
-module.exports = { securityDiff, requirement, sensitivity };
+module.exports = {
+  securityDiff, requirement, sensitivity, operations, allowsAnonymous, declaresAuth,
+  schemeOf, deref, fields, sensitiveResponseFields, leaf, words,
+};

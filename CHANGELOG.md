@@ -1,12 +1,18 @@
 # SpecShield CLI changelog
 
-## Unreleased — security regressions in the gate
+## Unreleased — security audit
+
+### Added
+
+- `specshield audit <spec>` audits a spec by OWASP API Security Top 10 category. `--har` adds passive checks on captured traffic: leaked secrets, personal data, CORS, cookies and missing headers. Secret values are never printed. Supports `--fail-on`, waivers, SARIF output and the GitHub job summary. Sends no requests.
+
+## 3.5.2 — 2026-11-10 — security regressions in the gate
 
 ### Added
 
 - `specshield gate --security` (or `gate.security: true`) blocks removed or weakened authentication, dropped OAuth scopes, new endpoints with forgotten auth, and newly exposed credentials or regulated data. Lower-risk changes are reported for review. Off by default. Findings use the existing shadow mode and waivers.
 
-## Unreleased — proof, not opinion: `specshield prove` and `specshield replay`
+## 3.5.1 — 2026-10-29 — proof, not opinion: `specshield prove` and `specshield replay`
 
 ### Added
 

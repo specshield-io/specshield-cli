@@ -42,7 +42,7 @@ What the CLI does:
 - [vs. Alternatives](#vs-alternatives) · [Pricing](#pricing)
 
 **Commands — local & hosted compare**
-- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [**CI gate: `specshield gate`**](#a-gate-you-can-leave-blocking-specshield-gate) · [**Proof: `prove` & `replay`**](#proof-not-opinion-specshield-prove-and-specshield-replay) · [**Security regressions: `gate --security`**](#security-regressions-in-the-gate-specshield-gate---security) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
+- [Local Compare](#local-compare) · [**Who does a change break? (usage-aware compare)**](#who-does-a-change-break--usage-aware-compare) · [**Safe removal: deprecate → drain → remove**](#safe-removal-deprecate--watch-traffic-drain--remove) · [**Break → fix: `specshield fix`**](#break--fix-generate-the-non-breaking-version) · [**CI gate: `specshield gate`**](#a-gate-you-can-leave-blocking-specshield-gate) · [**Proof: `prove` & `replay`**](#proof-not-opinion-specshield-prove-and-specshield-replay) · [**Security regressions: `gate --security`**](#security-regressions-in-the-gate-specshield-gate---security) · [**Security audit: `audit`**](#security-audit-specshield-audit) · [Remote Compare](#remote-compare) · [Comparison History](#comparison-history) · [Share a Comparison](#share-a-comparison) · [GitHub App PR Checks](#github-app--pr-checks)
 
 **Governance — lint & gate**
 - [`specshield govern`](#governance--lint-a-spec-and-gate-the-pr)
@@ -596,6 +596,30 @@ The gate also blocks a PR that makes the API less safe. Turn it on with `--secur
 A new requirement counts as safe only when every credential that passes it would have passed the old one. Moving a requirement between global and operation level, or adding a scope, reports nothing.
 
 Findings work like every other gate finding: `--shadow` reports without failing, and a waiver needs an owner, a reason and an expiry. Usage data never hides them. This reads what the spec declares; it doesn't test what the running service enforces. Sensitive fields are matched by name and `format`, so expect the occasional miss on unusual names.
+
+## Security audit: `specshield audit`
+
+Audits a whole spec and, optionally, captured traffic, by [OWASP API Security Top 10](https://owasp.org/API-Security/editions/2023/en/0x11-t10/) category. It sends no requests.
+
+```bash
+specshield audit openapi.yaml
+specshield audit openapi.yaml --har staging.har --host api.acme.com
+specshield audit openapi.yaml --fail-on medium --sarif audit.sarif
+```
+
+**From the spec:** missing or undefined authentication, public writes and admin endpoints, API keys and secrets in URLs, basic auth, deprecated OAuth flows, OAuth over HTTP, credentials in responses, personal data on public endpoints, privileged request fields, page sizes with no maximum, client-supplied URLs, plain-HTTP and non-production servers.
+
+**From a HAR file (`--har`):** secrets in URLs and responses, regulated and personal data, plain HTTP, missing HSTS and `nosniff`, risky CORS, unprotected session cookies, version banners, stack traces. Findings say where a secret was seen and never print its value. Only API responses are checked, so use `--host` to leave out third parties in a browser capture.
+
+| Option | Default | |
+|---|---|---|
+| `--fail-on <severity>` | `high` | Exit 1 at or above `high`, `medium` or `low`; `none` never fails |
+| `--waivers <file>` | `.specshield/waivers.yml` | Accepted findings, with an owner, a reason and an expiry. The `change` is the rule id |
+| `--sarif <file>` | | SARIF 2.1.0, for GitHub code scanning |
+| `--all` | | List every low-severity finding |
+| `--json` | | Machine-readable output |
+
+A spec shows what is declared, not what the service enforces, so "nothing found" is not a pass. Most categories are only partly checkable this way, and API6 and API10 need runtime testing.
 
 ## Proof, not opinion: `specshield prove` and `specshield replay`
 
