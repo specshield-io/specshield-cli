@@ -1,6 +1,13 @@
 # SpecShield CLI changelog
 
-## Unreleased — security audit
+## Unreleased — shadow APIs
+
+### Added
+
+- `specshield audit --logs <files>` compares real traffic with the spec (OWASP API9). It reports undocumented endpoints and methods that answer requests, retired versions still served, operations past their `x-sunset`, and exposed files such as `/.env`. Severity follows the response status; redirects count as no evidence. Catch-all pages are recognised by response size (the home page's, or one shared by other probes). Routes are folded by structure, and trailing `{path}` parameters span segments. A HAR passed with `--har` gets the same checks. Validated on six real public log datasets, 9.9M requests in all.
+- Log import records the response size (combined format) and recognises combined logs whose first lines have an empty request (OpenLiteSpeed).
+
+## 3.5.3 — 2026-11-10 — security audit
 
 ### Added
 

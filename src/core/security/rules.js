@@ -48,6 +48,12 @@ const RULES = {
   'cors-any-origin': ['API8', 'CORS allows any origin', 'Confirm this API holds nothing private; otherwise allow specific origins.'],
   'insecure-cookie': ['API8', 'Session cookie missing protections', 'Set Secure, HttpOnly and SameSite.'],
   'version-disclosure': ['API8', 'Server software version disclosed', 'Remove version details from response headers.'],
+  // Traffic vs spec
+  'shadow-endpoint': ['API9', 'Undocumented endpoint receiving traffic', 'Document it and give it the same review as the rest, or remove it.'],
+  'undocumented-method': ['API5', 'Undocumented method on a documented path', 'Answer 405 for it, or document and secure it.'],
+  'zombie-version': ['API9', 'Retired API version still served', 'Turn the old version off, or keep patching it like the current one.'],
+  'sunset-passed': ['API9', 'Still served after its sunset date', 'Turn it off as announced, or move x-sunset in the spec.'],
+  'exposed-sensitive-path': ['API8', 'Sensitive file or debug endpoint served', 'Block it at the server or proxy, and rotate anything it exposed.'],
   'stack-trace': ['API8', 'Stack trace in an error response', 'Return a generic error and log the detail on the server.'],
 };
 

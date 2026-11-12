@@ -15,6 +15,7 @@
  *              JSON with a host field, absolute request URLs), else null
  *   query      raw query string without the leading '?' ('' when absent)
  *   status     numeric status code, or null
+ *   bytes      response body size (combined format only), or null
  *   time       epoch ms, or null when the line carries no parseable timestamp
  *   userAgent  raw User-Agent, or null
  *   extras     quoted fields after the User-Agent (combined format only) —
@@ -34,7 +35,7 @@ const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', '
 // ─── combined / common ──────────────────────────────────────────────────────
 
 // host ident authuser [time] "request" status bytes ["referer" "user-agent"] [extras...]
-const COMBINED_RE = /^(\S+) \S+ \S+ \[([^\]]+)\] "((?:[^"\\]|\\.)*)" (\d{3}|-) \S+(?: "((?:[^"\\]|\\.)*)" "((?:[^"\\]|\\.)*)")?(.*)$/;
+const COMBINED_RE = /^(\S+) \S+ \S+ \[([^\]]+)\] "((?:[^"\\]|\\.)*)" (\d{3}|-) (\S+)(?: "((?:[^"\\]|\\.)*)" "((?:[^"\\]|\\.)*)")?(.*)$/;
 
 function parseCombined(line) {
   const m = COMBINED_RE.exec(line);
@@ -44,9 +45,10 @@ function parseCombined(line) {
   return {
     ...req,
     status: m[4] === '-' ? null : Number(m[4]),
+    bytes: /^\d+$/.test(m[5]) ? Number(m[5]) : null,
     time: parseClfTime(m[2]),
-    userAgent: m[6] !== undefined ? nullIfDash(unescape(m[6])) : null,
-    extras: m[7] ? tokenize(m[7]).map(nullIfDash) : [],
+    userAgent: m[7] !== undefined ? nullIfDash(unescape(m[7])) : null,
+    extras: m[8] ? tokenize(m[8]).map(nullIfDash) : [],
     json: null,
   };
 }
@@ -221,12 +223,17 @@ function parseAnyTime(v) {
 
 const PARSERS = { combined: parseCombined, alb: parseAlb, json: parseJsonLine };
 
-/** Picks the format that parses the most of the sample lines. */
+// A line can have a format's shape without being a request: OpenLiteSpeed logs
+// TLS probes and dropped connections as `"" 200`. They still say which format it is.
+const SHAPES = { combined: COMBINED_RE };
+
+/** Picks the format that parses (or at least fits) the most of the sample lines. */
 function detectFormat(sampleLines) {
   let best = null;
   let bestHits = 0;
   for (const [name, parse] of Object.entries(PARSERS)) {
-    const hits = sampleLines.filter((l) => parse(l)).length;
+    const shape = SHAPES[name];
+    const hits = sampleLines.filter((l) => parse(l) || (shape && shape.test(l))).length;
     if (hits > bestHits) { best = name; bestHits = hits; }
   }
   return best;
@@ -241,9 +248,9 @@ function splitRequestLine(s) {
   if (parts.length < 2) return null;
   const method = parts[0].toUpperCase();
   if (!HTTP_METHODS.has(method)) return null;
-  const { path, query, host } = splitTarget(parts[1]);
+  const { path, query, host, trailingSlash } = splitTarget(parts[1]);
   if (!path) return null;
-  return { method, path, query, host };
+  return { method, path, query, host, trailingSlash };
 }
 
 function splitTarget(target) {
@@ -262,8 +269,9 @@ function splitTarget(target) {
   let path = q >= 0 ? t.slice(0, q) : t;
   const query = q >= 0 ? t.slice(q + 1) : '';
   path = path.replace(/\/{2,}/g, '/');
-  if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
-  return { path, query, host };
+  const trailingSlash = path.length > 1 && path.endsWith('/');
+  if (trailingSlash) path = path.slice(0, -1);
+  return { path, query, host, trailingSlash };
 }
 
 /** "API.Example.com:443" → "api.example.com"; "[::1]:80" → "[::1]". */

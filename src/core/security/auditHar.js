@@ -28,7 +28,7 @@ const SECRET_VALUES = [
 ];
 const STACK = /Traceback \(most recent call last\)|Exception in thread "|\n\s+at [\w.$<>]+\([\w.]+\.(?:java|kt|scala):\d+\)|\n\s+at .+ \(.+\.[jt]s:\d+:\d+\)|\.php on line \d+/;
 
-function auditHar(files, { hosts = null } = {}) {
+function auditHar(files, { hosts = null, inventory = null } = {}) {
   const found = new Map();
   const stats = { entries: 0, api: 0, otherHosts: 0, hosts: new Set() };
   const add = (rule, severity, opts) => {
@@ -38,6 +38,7 @@ function auditHar(files, { hosts = null } = {}) {
   for (const file of files) {
     for (const e of entriesOf(file)) {
       stats.entries++;
+      if (inventory) inventory.add(recordOf(e));
       checkEntry(e, { add, hosts, stats });
     }
   }
@@ -49,6 +50,24 @@ function entriesOf(file) {
   try { doc = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${file} is not valid HAR JSON (${e.message})`); }
   if (!doc || !doc.log || !Array.isArray(doc.log.entries)) throw new Error(`${file} is not a HAR file (no log.entries)`);
   return doc.log.entries.filter((e) => e && e.request && e.request.url && e.response);
+}
+
+/** The same shape the access-log parsers produce, plus the response type. */
+function recordOf(e) {
+  let url;
+  try { url = new URL(e.request.url); } catch { return null; }
+  const time = Date.parse(e.startedDateTime);
+  return {
+    method: String(e.request.method || 'GET').toUpperCase(),
+    path: url.pathname,
+    query: url.search.replace(/^\?/, ''),
+    host: url.hostname.toLowerCase(),
+    status: e.response.status > 0 ? e.response.status : null,
+    time: Number.isNaN(time) ? null : time,
+    userAgent: ((e.request.headers || []).find((h) => h && /^user-agent$/i.test(h.name)) || {}).value || null,
+    mime: (e.response.content && e.response.content.mimeType) || null,
+    bytes: e.response.content && e.response.content.size >= 0 ? e.response.content.size : null,
+  };
 }
 
 function headerMap(list) {

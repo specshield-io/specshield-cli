@@ -604,10 +604,31 @@ Audits a whole spec and, optionally, captured traffic, by [OWASP API Security To
 ```bash
 specshield audit openapi.yaml
 specshield audit openapi.yaml --har staging.har --host api.acme.com
+specshield audit openapi.yaml --logs /var/log/nginx/access.log*.gz
 specshield audit openapi.yaml --fail-on medium --sarif audit.sarif
 ```
 
 **From the spec:** missing or undefined authentication, public writes and admin endpoints, API keys and secrets in URLs, basic auth, deprecated OAuth flows, OAuth over HTTP, credentials in responses, personal data on public endpoints, privileged request fields, page sizes with no maximum, client-supplied URLs, plain-HTTP and non-production servers.
+
+**From access logs (`--logs`) or a HAR file, compared with the spec (OWASP API9):**
+
+| Finding | What it means |
+|---|---|
+| `shadow-endpoint` | A path the spec doesn't have is answering requests |
+| `undocumented-method` | A documented path answers a method the spec doesn't list, e.g. `DELETE` |
+| `zombie-version` | `/v1/...` still answers where the spec documents `/v2/...` |
+| `sunset-passed` | An operation past its `x-sunset` date still answers |
+| `exposed-sensitive-path` | `/.env`, `/.git/config`, `/actuator/env` and similar answered 200 (checked even without a spec) |
+
+How sure a finding is comes from the response, not the request:
+
+- **Status.** 2xx (or 304) means the endpoint served the request: high for writes and internal paths, medium otherwise. 401/403/400 means it exists but refused (low). 404/405 means it isn't there, and redirects prove nothing (an HTTP→HTTPS redirect answers every path), so neither is reported.
+- **Catch-all pages.** Many sites answer every unknown path with the same page. When the logs record response sizes, a probe answered with the site's home page size, or the same size as other probes got, is downgraded; a size no other probe got stays high. Without sizes, a site that answered 200 to three or more probes is treated as a catch-all.
+- **Routes.** IDs are templated, and object names that don't look like IDs are folded once four or more sit in the same place with the same shape after them (`/things/noxus/x`, `/things/fooab/x` → `/things/{thingId}/x`). Health and discovery endpoints (`/readyz`, `/openapi/v3`…) are reported low. A trailing `{path}` parameter may span several segments, as in Kubernetes' `/proxy/{path}`.
+
+Logs in the same formats as `specshield usage import` are supported (combined, ALB, JSON lines, Kubernetes audit events, `.gz`). Per-site logs without a host are grouped by file name, so one site's catch-all doesn't affect another's findings. A file that can't be read is skipped with a warning. `--base-path` and `--host` narrow the logs to this API.
+
+Validated on real, published traffic: a Kubernetes CI run (250,724 API requests against the official spec, every reported route independently confirmed absent from it), NASA's 1995 web logs (1.9M lines), Elastic's Apache sample, 90 days of secrepo.com logs, and a 2025 forensic dataset of 7.4M requests from a compromised hosting server, where every probe answered 200 was correctly identified as a catch-all page.
 
 **From a HAR file (`--har`):** secrets in URLs and responses, regulated and personal data, plain HTTP, missing HSTS and `nosniff`, risky CORS, unprotected session cookies, version banners, stack traces. Findings say where a secret was seen and never print its value. Only API responses are checked, so use `--host` to leave out third parties in a browser capture.
 

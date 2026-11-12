@@ -107,8 +107,8 @@ describe('log parsers', () => {
   });
 
   test('splitTarget normalises slashes and drops fragments', () => {
-    expect(splitTarget('//a//b/?q=1#frag')).toEqual({ path: '/a/b', query: 'q=1', host: null });
-    expect(splitTarget('https://API.x.io:8443/a?b')).toEqual({ path: '/a', query: 'b', host: 'api.x.io' });
+    expect(splitTarget('//a//b/?q=1#frag')).toEqual({ path: '/a/b', query: 'q=1', host: null, trailingSlash: true });
+    expect(splitTarget('https://API.x.io:8443/a?b')).toEqual({ path: '/a', query: 'b', host: 'api.x.io', trailingSlash: false });
     expect(splitTarget('*')).toEqual({ path: null, query: '', host: null });
   });
 });
