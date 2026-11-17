@@ -1,6 +1,6 @@
 # SpecShield CLI changelog
 
-## Unreleased — opt-in telemetry
+## 3.5.5 — 2026-11-18 — opt-in telemetry
 
 ### Added
 
