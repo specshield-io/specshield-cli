@@ -1,6 +1,12 @@
 # SpecShield CLI changelog
 
-## Unreleased — shadow APIs
+## Unreleased — opt-in telemetry
+
+### Added
+
+- Opt-in usage telemetry. The CLI asks once at an interactive terminal (default no), never in CI or with `--json`; `SPECSHIELD_TELEMETRY=1` opts in for CI, and `DO_NOT_TRACK=1` or `SPECSHIELD_TELEMETRY=0` always turn it off. Each event has the command, the names of the flags given (never their values), exit code, duration, CLI version, OS and CI provider; never paths, specs, hosts, repository names or results. It's sent by a detached process after the command ends, so exit codes and timing are unchanged. `specshield telemetry status|enable|disable` shows and changes the choice; `SPECSHIELD_TELEMETRY_DEBUG=1` prints events instead of sending them.
+
+## 3.5.4 — 2026-11-12 — shadow APIs
 
 ### Added
 

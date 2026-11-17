@@ -19,6 +19,9 @@ const waiversCommand = require('./commands/waivers');
 const proveCommand = require('./commands/prove');
 const replayCommand = require('./commands/replay');
 const auditCommand = require('./commands/audit');
+const telemetryCommand = require('./commands/telemetry');
+const telemetry = require('./core/telemetry');
+const { loadLocalConfig, saveLocalConfig } = require('./config/localConfig');
 
 const program = new Command();
 
@@ -48,6 +51,9 @@ program.addCommand(waiversCommand);
 program.addCommand(proveCommand);
 program.addCommand(replayCommand);
 program.addCommand(auditCommand);
+program.addCommand(telemetryCommand);
+
+telemetry.install(program, { version, loadConfig: loadLocalConfig, saveConfig: saveLocalConfig });
 
 program.parseAsync(process.argv).catch((err) => {
   const logger = require('./utils/logger');

@@ -57,7 +57,7 @@ What the CLI does:
 - [GitHub Actions workflows](#cicd--github-actions)
 
 **Reference**
-- [Config File](#config-file) · [All Options](#all-options) · [Exit Codes](#exit-codes)
+- [Config File](#config-file) · [All Options](#all-options) · [Exit Codes](#exit-codes) · [Telemetry (opt-in)](#telemetry-opt-in)
 
 **Project**
 - [License](#license) · [Support](#support)
@@ -1865,6 +1865,34 @@ Per-subcommand flags:
 | `0` | Clean — no breaking changes / deployable / all probes pass |
 | `1` | Breaking changes found / not deployable / one or more probes failed / a replayed request that worked before fails now |
 | `2` | Config error, missing token, or runtime error |
+
+---
+
+## Telemetry (opt-in)
+
+The CLI sends nothing unless you opt in. The first time you run a command in an interactive terminal it asks once, defaulting to no. It never asks in CI, without a terminal, or with `--json`.
+
+```bash
+specshield telemetry status    # whether it's on, and an example of what is sent
+specshield telemetry enable
+specshield telemetry disable
+```
+
+One event per command run, sent by a background process after the command ends, so it never slows a command down or changes its exit code:
+
+```json
+{"id":"3f6c…","version":"3.5.5","command":"gate","flags":["--security","--shadow"],
+ "exitCode":0,"durationMs":1840,"ci":"github","os":"linux","arch":"x64","node":20}
+```
+
+**Never sent:** file paths, spec contents, flag values, hosts, repository names or results. `id` is a random id created when you opt in; in CI it's a one-way hash of the CI's numeric project id, so one repository's runs count together without its name.
+
+| Variable | Effect |
+|---|---|
+| `SPECSHIELD_TELEMETRY=1` | Opt in (use this in CI, where there is no prompt) |
+| `SPECSHIELD_TELEMETRY=0` | Off, whatever was chosen before |
+| `DO_NOT_TRACK=1` | Off, always |
+| `SPECSHIELD_TELEMETRY_DEBUG=1` | Print each event to stderr instead of sending it |
 
 ---
 
